@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Homepage</title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
@@ -37,14 +38,17 @@
         .card {
             border: 1px solid #ddd;
             border-radius: 5px;
-            width: 200px; /* Changed width */
-            height: 200px; /* Added height */
+            width: 200px;
+            /* Changed width */
+            height: 200px;
+            /* Added height */
             text-align: center;
             margin: 10px;
             padding: 10px;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
             display: inline-block;
-            overflow: auto; /* To handle content that might overflow */
+            overflow: auto;
+            /* To handle content that might overflow */
         }
 
         .card img {
@@ -65,39 +69,40 @@
         }
     </style>
 </head>
+
 <body>
     <div id="container">
-        <br/>
+        <br />
         <div id="header">
             <h1>Welcome to VisualWebArena</h1>
         </div>
 
         <div class="card" role="region" aria-label="Classifieds">
-            <img src="{{ url_for('static', filename='figures/classifieds.png') }}"  alt="Logo for Classifieds">
-            <a href="<your-server-hostname>:9980">
+            <img src="{{ url_for('static', filename='figures/classifieds.png') }}" alt="Logo for Classifieds">
+            <a href="http://18.216.88.140:9980">
                 <h2 id="appName">Classifieds</h2>
             </a>
             <p id="appDescription">A classifieds website for people to sell and buy things</p>
         </div>
 
         <div class="card" role="region" aria-label="OneStopShop">
-         <img src="{{ url_for('static', filename='figures/onestopshop.png') }}"  alt="Logo for OneStopShop">
-         <a href="<your-server-hostname>:7770">
-            <h2 id="appName">OneStopShop</h2>
-         </a>
-         <p id="appDescription">An online shopping site</p>
+            <img src="{{ url_for('static', filename='figures/onestopshop.png') }}" alt="Logo for OneStopShop">
+            <a href="http://18.216.88.140:7770">
+                <h2 id="appName">OneStopShop</h2>
+            </a>
+            <p id="appDescription">An online shopping site</p>
         </div>
 
         <div class="card" role="region" aria-label="Reddit">
-            <img src="{{ url_for('static', filename='figures/reddit.png') }}"  alt="Logo for Reddit">
-            <a href="<your-server-hostname>:9999/forums/all">
+            <img src="{{ url_for('static', filename='figures/reddit.png') }}" alt="Logo for Reddit">
+            <a href="http://18.216.88.140:9999/forums/all">
                 <h2 id="appName">Reddit</h2>
             </a>
             <p id="appDescription">A social news aggregation and discussion website</p>
         </div>
 
         <div class="card" role="region" aria-label="Calculator">
-            <img src="{{ url_for('static', filename='figures/calculator.png') }}"  alt="Logo for Calculator">
+            <img src="{{ url_for('static', filename='figures/calculator.png') }}" alt="Logo for Calculator">
             <a href="calculator.html">
                 <h2 id="appName">Calculator</h2>
             </a>
@@ -105,7 +110,7 @@
         </div>
 
         <div class="card" role="region" aria-label="Scratchpad">
-            <img src="{{ url_for('static', filename='figures/scratchpad.png') }}"  alt="Logo for Scratchpad">
+            <img src="{{ url_for('static', filename='figures/scratchpad.png') }}" alt="Logo for Scratchpad">
             <a href="scratchpad.html">
                 <h2 id="appName">Scratchpad</h2>
             </a>
@@ -113,8 +118,8 @@
         </div>
 
         <div class="card" role="region" aria-label="Wikipedia">
-            <img src="{{ url_for('static', filename='figures/wikipedia.png') }}"  alt="Logo for Wikipedia">
-            <a href="<your-server-hostname>:8888/wikipedia_en_all_maxi_2022-05/A/User:The_other_Kiwix_guy/Landing">
+            <img src="{{ url_for('static', filename='figures/wikipedia.png') }}" alt="Logo for Wikipedia">
+            <a href="http://18.216.88.140:8888/wikipedia_en_all_maxi_2022-05/A/User:The_other_Kiwix_guy/Landing">
                 <h2 id="appName">Wikipedia</h2>
             </a>
             <p id="appDescription">An online encyclopedia</p>
@@ -124,4 +129,5 @@
 
     </div>
 </body>
+
 </html>

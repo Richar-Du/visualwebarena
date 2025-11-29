@@ -807,47 +807,136 @@ class ImageObservationProcessor(ObservationProcessor):
         self.meta_data = create_empty_metadata()
 
     def get_page_bboxes(self, page: Page) -> list[list[float]]:
-        """JavaScript code to return bounding boxes and other metadata from HTML elements."""
+        """
+        Optimized JavaScript to handle Shadow DOM and better interactive element detection.
+        """
         js_script = """
         (() => {
-            const interactableSelectors = [
-                'a[href]:not(:has(img))', 'a[href] img', 'button', 'input:not([type="hidden"])', 'textarea', 'select',
-                '[tabindex]:not([tabindex="-1"])', '[contenteditable="true"]', '[role="button"]', '[role="link"]',
-                '[role="checkbox"]', '[role="menuitem"]', '[role="tab"]', '[draggable="true"]',
-                '.btn', 'a[href="/notifications"]', 'a[href="/submit"]', '.fa.fa-star.is-rating-item', 'input[type="checkbox"]'
+            // 1. 定义哪些标签天生是交互式的
+            const nativeInteractableTags = new Set([
+                'A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'DETAILS', 'SUMMARY', 
+                'LABEL', 'STRONG', 'B', 'I', 'EM',
+            ]);
 
-            ];
+            // 2. 定义哪些 input type 是隐藏的
+            const hiddenInputTypes = new Set(['hidden', 'image']); // image 这里的处理看需求，通常单独处理
 
-            const textSelectors = ['p', 'span', 'div:not(:has(*))', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'article'];
-            const modifiedTextSelectors = textSelectors.map(selector =>
-                `:not(${interactableSelectors.join(', ')}):not(style) > ${selector}`
-            );
+            function isInteractable(element) {
+                const tagName = element.tagName;
 
-            const combinedSelectors = [...interactableSelectors, ...modifiedTextSelectors];
-            const elements = document.querySelectorAll(combinedSelectors.join(', '));
+                // 排除不可见或隐藏元素
+                if (element.offsetParent === null && tagName !== 'BODY') return false; 
 
+                // 检查原生标签
+                if (nativeInteractableTags.has(tagName)) {
+                    if (tagName === 'INPUT' && hiddenInputTypes.has(element.type)) return false;
+                    return true;
+                }
+
+                // 检查 ARIA Role
+                const role = element.getAttribute('role');
+                if (['button', 'link', 'menuitem', 'tab', 'checkbox', 'switch', 'radio'].includes(role)) {
+                    return true;
+                }
+
+                // 检查 contenteditable
+                if (element.isContentEditable) return true;
+
+                // 检查 tabindex (排除 -1)
+                const tabIndex = element.getAttribute('tabindex');
+                if (tabIndex !== null && tabIndex !== '-1') return true;
+
+                // 【核心优化】检查鼠标样式 (Cursor Pointer)
+                // 这能捕获大量用 div/span 写的伪按钮
+                const style = window.getComputedStyle(element);
+                if (style.cursor === 'pointer') return true;
+
+                // 特殊类名匹配 (保留原有逻辑作为兜底)
+                if (element.classList.contains('btn') || 
+                    (tagName === 'I' && (element.className.includes('fa') || element.className.includes('icon')))) {
+                    return true;
+                }
+
+                return false;
+            }
+
+            // 3. 递归遍历函数 (穿透 Shadow DOM)
+            function collectElements(root, elements = []) {
+                // 使用 TreeWalker 遍历当前 root 下的所有节点
+                const walker = document.createTreeWalker(
+                    root,
+                    NodeFilter.SHOW_ELEMENT,
+                    {
+                        acceptNode: (node) => {
+                            // 稍微过滤一下，避免遍历太多无用节点
+                            if (node.tagName === 'SCRIPT' || node.tagName === 'STYLE') return NodeFilter.FILTER_REJECT;
+                            return NodeFilter.FILTER_ACCEPT;
+                        }
+                    }
+                );
+
+                let currentNode = walker.currentNode;
+                while(currentNode) {
+                    // 处理当前节点
+                    if (currentNode !== root) { // 跳过 root 本身
+                        if (isInteractable(currentNode)) {
+                            elements.push(currentNode);
+                        }
+
+                        // 【核心】如果有 Shadow Root，递归进入
+                        if (currentNode.shadowRoot) {
+                            collectElements(currentNode.shadowRoot, elements);
+                        }
+                    }
+                    currentNode = walker.nextNode();
+                }
+                return elements;
+            }
+
+            // 执行遍历
+            const allElements = collectElements(document.body);
+            
+            
+            // 4. 生成 CSV 数据 (保持原有格式)
             const pixelRatio = window.devicePixelRatio;
             let csvContent = "ID,Element,Top,Right,Bottom,Left,Width,Height,Alt,Class,Id,TextContent,Interactable\\n";
             let counter = 1;
 
-            elements.forEach(element => {
+            allElements.forEach(element => {
                 const rect = element.getBoundingClientRect();
-                if (rect.width === 0 || rect.height === 0) return;
-                let altText = element.getAttribute('alt') || '';
-                altText = altText.replace(/"/g, ''); // Escape double quotes in alt text
-                const classList = element.className || '';
-                const id = element.id || '';
-                let textContent = element.textContent || '';
-                textContent = textContent.replace(/"/g, ''); // Escape double quotes in textContent
 
-                // Determine if the element is interactable
-                const isInteractable = interactableSelectors.some(selector => element.matches(selector));
+                // 再次过滤：确保宽高有效
+                if (rect.width < 5 || rect.height < 5) return;
+
+                // 获取最准确的文本描述
+                let altText = element.getAttribute('alt') || element.getAttribute('aria-label') || element.getAttribute('title') || '';
+                altText = altText.replace(/"/g, ''); 
+
+                const classList = element.className && typeof element.className === 'string' ? element.className : '';
+                const id = element.id || '';
+
+                // 优先取自身文本，如果为空且是 icon 按钮，可能需要取 textContent
+                let textContent = element.textContent || '';
+                // 简单清洗文本
+                textContent = textContent.replace(/\\s+/g, ' ').trim().replace(/"/g, '');
+
+                // 如果 textContent 太长（比如包含了整个卡片内容），截断它
+                if (textContent.length > 200) textContent = textContent.substring(0, 200);
 
                 const dataString = [
-                    counter, element.tagName, (rect.top + window.scrollY) * pixelRatio,
-                    (rect.right + window.scrollX) * pixelRatio, (rect.bottom + window.scrollY) * pixelRatio,
-                    (rect.left + window.scrollX) * pixelRatio, rect.width * pixelRatio, rect.height * pixelRatio,
-                    altText, classList, id, textContent, isInteractable
+                    counter, 
+                    element.tagName, 
+                    (rect.top + window.scrollY) * pixelRatio,
+                    (rect.right + window.scrollX) * pixelRatio, 
+                    (rect.bottom + window.scrollY) * pixelRatio,
+                    (rect.left + window.scrollX) * pixelRatio, 
+                    rect.width * pixelRatio, 
+                    rect.height * pixelRatio,
+                    altText, 
+                    classList, 
+                    id, 
+                    textContent, 
+                    true // 既然通过了筛选，这里默认为 true
                 ].map(value => `"${value}"`).join(",");
 
                 csvContent += dataString + "\\n";
@@ -857,7 +946,6 @@ class ImageObservationProcessor(ObservationProcessor):
             return csvContent;
         })();
         """
-        # Save the bbox as a CSV
         csv_content = page.evaluate(js_script)
         return csv_content
 
