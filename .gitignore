@@ -147,6 +147,3 @@ config_files/wa/test_webarena/*
 
 cache/*
 agents/prompts/jsons/*
-
-config_files
-browser_env
