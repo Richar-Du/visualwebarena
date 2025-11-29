@@ -136,15 +136,15 @@ def config() -> argparse.Namespace:
     parser.add_argument(
         "--eval_captioning_model",
         type=str,
-        default="Salesforce/blip2-flan-t5-xl",
-        choices=["Salesforce/blip2-flan-t5-xl"],
+        default="qwen3-vl-plus",
+        # choices=["Salesforce/blip2-flan-t5-xl"], # Allow other models
         help="Captioning backbone for VQA-type evals.",
     )
     parser.add_argument(
         "--captioning_model",
         type=str,
-        default="Salesforce/blip2-flan-t5-xl",
-        choices=["Salesforce/blip2-flan-t5-xl", "llava-hf/llava-1.5-7b-hf"],
+        default="qwen3-vl-plus",
+        # choices=["Salesforce/blip2-flan-t5-xl", "llava-hf/llava-1.5-7b-hf"], # Allow other models
         help="Captioning backbone for accessibility tree alt text.",
     )
 
