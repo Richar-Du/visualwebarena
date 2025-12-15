@@ -8,7 +8,8 @@ from datetime import datetime
 
 from PIL import Image
 
-from browser_env import Action, Trajectory
+from browser_env import Action, Trajectory, ActionTypes, create_stop_action
+from browser_env.actions import is_equivalent
 from browser_env.helper_functions import get_action_description
 from llms import lm_config
 
@@ -83,6 +84,10 @@ class MultiAgentCoordinator:
         self.intentions: List[str] = []
         self.actions: List[Action] = []
         self.reflections: List[Dict[str, Any]] = []
+
+        # Early stop thresholds (can be provided via memory_config or use defaults)
+        self.parsing_failure_th = memory_config.get("parsing_failure_th", 3)
+        self.repeating_action_th = memory_config.get("repeating_action_th", 5)
 
         # Meta data for action history tracking (required by DirectPromptConstructor)
         # Initialize with "None" as the first action, matching run.py implementation
@@ -277,6 +282,19 @@ class MultiAgentCoordinator:
         # Main execution loop
         while True:
             try:
+                # Early-stop check (mirrors run.py behavior)
+                early_flag, early_info = self._early_stop(self.max_steps, {
+                    "parsing_failure": self.parsing_failure_th,
+                    "repeating_action": self.repeating_action_th,
+                })
+                if early_flag:
+                    # Append a stop action to the trajectory and end execution
+                    stop_action = create_stop_action(f"Early stop: {early_info}")
+                    self.actions.append(stop_action)
+                    self.trajectory.append(stop_action)
+                    # Log and break
+                    self.log_agent_response("coordinator", len(self.actions), {"early_stop": early_info})
+                    break
                 # Check if we should continue
                 context_summary = self._get_current_context_summary()
                 continuation_decision = self.workflow_manager.should_continue_execution(context_summary)
@@ -351,6 +369,59 @@ class MultiAgentCoordinator:
             "workflow_results": workflow_final,
             "final_context": final_context_summary,
         }
+
+    def _early_stop(self, max_steps: int, thresholds: Dict[str, int]) -> tuple[bool, str]:
+        """Check whether need to stop early, similar to run.py's early_stop.
+
+        Returns (flag, reason_str)
+        """
+        # reach the max step
+        try:
+            num_steps = (len(self.trajectory) - 1) / 2
+        except Exception:
+            num_steps = 0
+
+        if num_steps >= max_steps:
+            return True, f"Reach max steps {max_steps}"
+
+        # Parsing failure check
+        k = thresholds.get("parsing_failure", 3)
+        if k > 0:
+            last_k_actions = self.trajectory[1::2][-k:]
+            if len(last_k_actions) >= k:
+                if all([
+                    (isinstance(action, dict) and action.get("action_type") == ActionTypes.NONE)
+                    for action in last_k_actions
+                ]):
+                    return True, f"Failed to parse actions for {k} times"
+
+        # Repeating action check
+        k = thresholds.get("repeating_action", 5)
+        action_seq = self.trajectory[1::2]
+        if len(action_seq) == 0:
+            return False, ""
+
+        last_action = action_seq[-1]
+        try:
+            last_action_type = last_action.get("action_type")
+        except Exception:
+            last_action_type = None
+
+        if last_action_type != ActionTypes.TYPE:
+            if len(action_seq) >= k:
+                last_k_actions = action_seq[-k:]
+                if all([is_equivalent(action, last_action) for action in last_k_actions]):
+                    return True, f"Same action for {k} times"
+        else:
+            # typing action: check frequency across full sequence
+            try:
+                count_same = sum([1 for action in action_seq if is_equivalent(action, last_action)])
+                if count_same >= k:
+                    return True, f"Same typing action for {k} times"
+            except Exception:
+                pass
+
+        return False, ""
 
     def _register_agents(self) -> None:
         """Register all agents with the communication hub."""
@@ -539,6 +610,29 @@ class MultiAgentCoordinator:
                 self.actions.append(executed_action)
 
                 # Execute action in browser environment if available
+                # If the executed action is a STOP action, mirror run.py behavior:
+                # append the action to the trajectory and terminate execution cycle
+                if executed_action.get("action_type") == ActionTypes.STOP:
+                    print(f"🔍 Executing action in browser: {executed_action.get('action_type', 'UNKNOWN')}")
+                    # update action history and trajectory so evaluators see Action as last element
+                    action_str = f"STOP: {executed_action.get('answer', '')}"
+                    try:
+                        self.meta_data["action_history"].append(action_str)
+                    except Exception:
+                        self.meta_data["action_history"] = ["None", action_str]
+
+                    # append the stop action to trajectory and return termination signal
+                    self.trajectory.append(executed_action)
+                    return {
+                        "should_terminate": True,
+                        "step_number": step_number,
+                        "context_result": context_result,
+                        "planning_result": planning_result,
+                        "execution_result": execution_result,
+                        "reflection_result": {},
+                        "new_observation": None,
+                    }
+
                 if self.browser_env is not None:
                     try:
                         print(f"🔍 Executing action in browser: {executed_action.get('action_type', 'UNKNOWN')}")
