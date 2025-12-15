@@ -7,9 +7,10 @@ using Context, Planner, Actor, and Reflector agents.
 import argparse
 import json
 import os
-import requests
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+
 
 import torch
 
@@ -233,6 +234,7 @@ def test(args, config_file):
     caption_image_fn = None
     if observation_type in [
         "accessibility_tree_with_captioner",
+        # "image_som",
     ]:
         device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -247,18 +249,14 @@ def test(args, config_file):
         "height": browser_config.get('viewport_height', 720),
     }
 
-    # Get observation config for browser parameters
-    observation_config = config.get('observation', {})
-    output_config = config.get('output', {})
-
     # Create browser environment
     env = ScriptBrowserEnv(
         headless=browser_config.get('headless', False),  # Set to False for debugging
         slow_mo=browser_config.get('slow_mo', 100),
         observation_type=observation_type,
-        current_viewport_only=observation_config.get('current_viewport_only', True),
+        current_viewport_only=browser_config.get('current_viewport_only', True),
         viewport_size=viewport_size,
-        save_trace_enabled=output_config.get('save_trace_enabled', True),
+        save_trace_enabled=browser_config.get('save_trace_enabled', True),
         sleep_after_execution=browser_config.get('sleep_after_execution', 0.5),
         captioning_fn=caption_image_fn,
     )
@@ -269,8 +267,7 @@ def test(args, config_file):
     model_name = lm_cfg.model.lower()
     is_multimodal_model = (
         "gemini" in model_name or 
-        ("gpt-4" in model_name and "vision" in model_name) or
-        ("gpt-4o" in model_name)
+        ("gpt-4" in model_name and "vision" in model_name)
     )
     is_image_observation = observation_type in ["image", "image_som"]
     
@@ -279,10 +276,10 @@ def test(args, config_file):
     if not instruction_path:
         # Select default instruction path based on observation type and model
         if is_multimodal_model and is_image_observation:
-            instruction_path = 'agent/prompts/jsons/p_multimodal_cot_id_actree_0s.json'
+            instruction_path = 'agent/prompts/jsons/p_multimodal_cot_id_actree_3s.json'
         else:
             instruction_path = 'agent/prompts/jsons/p_cot_id_actree_3s.json'
-
+    
     # Load instruction to check prompt_constructor type
     with open(instruction_path) as f:
         instruction_data = json.load(f)
@@ -319,27 +316,27 @@ def test(args, config_file):
         captioning_fn=caption_image_fn if observation_type == "accessibility_tree_with_captioner" else None,
     )
 
+
+    task_cfg = config.get('task', {})
+    output_cfg = config.get('output', {})
+    task_metadata_base = config.get('task_metadata') or {
+        "task_id": task_cfg.get('task_id'),
+        "task": task_cfg.get('intent'),
+        "confirmed_task": task_cfg.get('confirmed_task'),
+        "website": task_cfg.get('website') or task_cfg.get('start_url'),
+        "reference_length": task_cfg.get('reference_length'),
+        "level": task_cfg.get('level'),
+    }
+    task_metadata_base = {k: v for k, v in task_metadata_base.items() if v is not None}  # 只保留有值的元数据
+    webjudge_root = output_cfg.get('webjudge_root')  # 可自定义 WebJudge 输出根目录
+    
     # Create multi-agent coordinator with browser environment
     coordinator = MultiAgentCoordinator(lm_cfg,
-                                        base_agent,
-                                        browser_env=env,
-                                        result_dir=result_dir,
-                                        memory_config=config.get('memory', {}))
-
-    # Load input images for the task, if any.
-    image_paths = config.get('task', {}).get('image', None)
-    images = []
-    if image_paths is not None:
-        if isinstance(image_paths, str):
-            image_paths = [image_paths]
-        for image_path in image_paths:
-            # Load image either from the web or from a local path.
-            if image_path.startswith("http"):
-                input_image = Image.open(requests.get(image_path, stream=True).raw)
-            else:
-                input_image = Image.open(image_path)
-
-            images.append(input_image)
+                                            base_agent,
+                                            browser_env=env,
+                                            result_dir=result_dir,
+                                            memory_config=config.get('memory', {}),
+                                            webjudge_result_root=webjudge_root)
 
     # Execute workflow with initial observation from browser
     # Use start_url from config if available
@@ -351,11 +348,17 @@ def test(args, config_file):
     initial_obs, initial_info = env.reset(options=reset_options if reset_options else None)
     initial_observation = {"observation": initial_obs, "info": initial_info}
 
+
+
+
+
     result = coordinator.execute_task(
         user_goal=config.get('task', {}).get('intent', 'Not specified'),
         start_observation=initial_observation,
         max_steps=config.get('task', {}).get('max_steps', 3),
-        images=images if images else None
+        task_metadata=task_metadata_base,
+        webjudge_root=webjudge_root
+
     )
 
     # Return the execution result

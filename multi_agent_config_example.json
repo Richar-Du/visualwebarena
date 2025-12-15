@@ -1,12 +1,11 @@
 {
   "task": {
     "start_url": "https://www.baidu.com",
-    "intent": "Search for information about Yao Ming and Shaquille O'Neal, then calculate the sum of their ages",
-    "max_steps": 5
+    "intent": "Search for information about Yao Ming and Shaquille O'Neal, then calculate the sum of their ages"
   },
   "model": {
     "provider": "openai",
-    "model": "deepseek-chat",
+    "model": "qwen3-vl-plus",
     "mode": "chat",
     "temperature": 1.0,
     "top_p": 0.9,
@@ -19,7 +18,7 @@
     "viewport_height": 2048
   },
   "observation": {
-    "observation_type": "accessibility_tree",
+    "observation_type": "image_som",
     "action_set_tag": "som",
     "current_viewport_only": true
   },
@@ -33,7 +32,6 @@
   },
   "output": {
     "result_dir": "demo_multi_agent",
-    "save_trace": true,
     "render_screenshot": true,
     "verbose": true
   }
