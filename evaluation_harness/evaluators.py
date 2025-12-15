@@ -69,7 +69,7 @@ class Evaluator(object):
             raise ValueError(
                 "The last element of trajectory should be an action, add a fake stop action if needed"
             )
-
+        print(f"Last action: {last_action}")
         return last_action  # type: ignore[return-value]
 
     @staticmethod
