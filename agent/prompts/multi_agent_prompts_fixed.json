@@ -24,6 +24,17 @@
       }
     },
     "context_agent": {
+      "init_summary_generation": {
+        "name": "Initial Summary Generation",
+        "task": "Generate initial summary of current task trajectory",
+        "template": "Generate a concise context summary for a web automation task based on the initial webpage and task information.\n\nUser Goal:\n{user_goal}\n\nGenerate a brief summary (2-5 sentences) that captures:\n1. Current task progress based on observations\n2. Key insights from recent observations\n",
+        "variables": [
+          "user_goal"
+        ],
+        "temperature": 0.7,
+        "max_tokens": 2048,
+        "multimodal": true
+      },
       "observation_summarization": {
         "name": "Observation Summarization",
         "task": "Generate intelligent summary of web page based purely on visual analysis",
@@ -36,12 +47,13 @@
       "summary_generation": {
         "name": "Context Summary Generation",
         "task": "Generate concise context summaries for agent coordination",
-        "template": "Generate a concise context summary for a web automation task.\n\nTASK INFORMATION:\nUser Goal: {user_goal}\nTotal Steps Taken: {total_steps}\n\nRECENT CONTEXT:\nRecent Page States: {observation_summary}\nRecent Actions Taken: {action_summary}\nRecent Performance: {reflection_summary}\n\nGenerate a brief summary (2-5 sentences) that captures:\n1. Current task progress based on observations and actions taken\n2. Key insights from recent observations and performance patterns\n",
+        "template": "Update the context summary of the current web automation task based on the most recent execution trajectory.\n\nUser Goal:\n{user_goal}\n\nCURRENT CONTEXT:\n{current_summary}\n\nUpdate and generate a new brief summary (2-5 sentences) that captures:\n1. Current task progress based on observations and actions taken\n2. Key insights from recent observations and actions patterns\n",
         "variables": [
-          "user_goal", "total_steps", "observation_summary", "action_summary", "reflection_summary"
+          "user_goal", "current_summary"
         ],
         "temperature": 0.7,
-        "max_tokens": 2048
+        "max_tokens": 2048,
+        "multimodal": true
       },
       "reflection_summarization": {
         "name": "Reflection Summarization",
@@ -72,16 +84,16 @@
       "current_state_analysis": {
         "name": "Current State Analysis",
         "task": "Analyze current state and determine next atomic action",
-        "template": "Analyze the current execution state briefly to determine which subtask is currently being worked on and what the next atomic action should be.\n\nUSER GOAL: {user_goal}\n\nTASK SUBTASKS:\n{subtasks}\n\nCURRENT PAGE STATE:\n{current_page_text}\n\nRECENT CONTEXT:\nObservations Summary: {observation_summary}\nActions Summary: {action_summary}\nPerformance Summary: {reflection_summary}\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about the current state and next action\n</think>\n<current_subtask>\nThe exact subtask currently being worked on (must match one from the TASK SUBTASKS list)\n</current_subtask>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\")\n</next_action>\n\nEXAMPLE:\n<think>\nThe user wants to search for products. We're currently on the homepage and need to start the search process. The first subtask is to navigate to search functionality, which we haven't completed yet.\n</think>\n<current_subtask>\nNavigate to search functionality\n</current_subtask>\n<next_action>\nClick on the search box to activate it\n</next_action>\n\nANOTHER EXAMPLE:\n<think>\nWe've successfully navigated to the search page and entered the query. Now we need to review the search results and select relevant items. This matches subtask 2.\n</think>\n<current_subtask>\nEnter search query and review results\n</current_subtask>\n<next_action>\nScroll down to view all search results\n</next_action>",
-        "variables": ["user_goal", "subtasks", "current_page_text", "observation_summary", "action_summary", "reflection_summary"],
+        "template": "Analyze the current execution state briefly to determine which subtask is currently being worked on and what the next atomic action should be.\n\nUSER GOAL: {user_goal}\n\nTASK SUBTASKS:\n{subtasks}\n\nCURRENT PAGE STATE:\n{current_page_text}\n\nRECENT CONTEXT: {context_summary}\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about the current state and next action\n</think>\n<current_subtask>\nThe exact subtask currently being worked on (must match one from the TASK SUBTASKS list)\n</current_subtask>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\")\n</next_action>\n\nEXAMPLE:\n<think>\nThe user wants to search for products. We're currently on the homepage and need to start the search process. The first subtask is to navigate to search functionality, which we haven't completed yet.\n</think>\n<current_subtask>\nNavigate to search functionality\n</current_subtask>\n<next_action>\nClick on the search box to activate it\n</next_action>\n\nANOTHER EXAMPLE:\n<think>\nWe've successfully navigated to the search page and entered the query. Now we need to review the search results and select relevant items. This matches subtask 2.\n</think>\n<current_subtask>\nEnter search query and review results\n</current_subtask>\n<next_action>\nScroll down to view all search results\n</next_action>",
+        "variables": ["user_goal", "subtasks", "current_page_text", "context_summary"],
         "temperature": 0.6,
         "max_tokens": 2048
       },
       "current_state_analysis_w_mem": {
         "name": "Current State Analysis with Memory",
         "task": "Analyze current state and determine next atomic action",
-        "template": "Analyze the current execution state briefly to determine which subtask is currently being worked on and what the next atomic action should be.\n\nHere are some experiences and memories from previous related tasks for reference:\n{memory}\n\nCURRENT USER GOAL: {user_goal}\n\nTASK SUBTASKS:\n{subtasks}\n\nCURRENT PAGE STATE:\n{current_page_text}\n\nRECENT CONTEXT:\nObservations Summary: {observation_summary}\nActions Summary: {action_summary}\nPerformance Summary: {reflection_summary}\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about the current state and next action\n</think>\n<current_subtask>\nThe exact subtask currently being worked on (must match one from the TASK SUBTASKS list)\n</current_subtask>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\")\n</next_action>\n\nEXAMPLE:\n<think>\nThe user wants to search for products. We're currently on the homepage and need to start the search process. The first subtask is to navigate to search functionality, which we haven't completed yet.\n</think>\n<current_subtask>\nNavigate to search functionality\n</current_subtask>\n<next_action>\nClick on the search box to activate it\n</next_action>\n\nANOTHER EXAMPLE:\n<think>\nWe've successfully navigated to the search page and entered the query. Now we need to review the search results and select relevant items. This matches subtask 2.\n</think>\n<current_subtask>\nEnter search query and review results\n</current_subtask>\n<next_action>\nScroll down to view all search results\n</next_action>",
-        "variables": ["memory","user_goal", "subtasks", "current_page_text", "observation_summary", "action_summary", "reflection_summary"],
+        "template": "Analyze the current execution state briefly to determine which subtask is currently being worked on and what the next atomic action should be.\n\nHere are some experiences and memories from previous related tasks for reference:\n{memory}\n\nCURRENT USER GOAL: {user_goal}\n\nTASK SUBTASKS:\n{subtasks}\n\nCURRENT PAGE STATE:\n{current_page_text}\n\nRECENT CONTEXT: {context_summary}\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about the current state and next action\n</think>\n<current_subtask>\nThe exact subtask currently being worked on (must match one from the TASK SUBTASKS list)\n</current_subtask>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\")\n</next_action>\n\nEXAMPLE:\n<think>\nThe user wants to search for products. We're currently on the homepage and need to start the search process. The first subtask is to navigate to search functionality, which we haven't completed yet.\n</think>\n<current_subtask>\nNavigate to search functionality\n</current_subtask>\n<next_action>\nClick on the search box to activate it\n</next_action>\n\nANOTHER EXAMPLE:\n<think>\nWe've successfully navigated to the search page and entered the query. Now we need to review the search results and select relevant items. This matches subtask 2.\n</think>\n<current_subtask>\nEnter search query and review results\n</current_subtask>\n<next_action>\nScroll down to view all search results\n</next_action>",
+        "variables": ["memory","user_goal", "subtasks", "current_page_text", "context_summary"],
         "temperature": 0.6,
         "max_tokens": 2048
       }
