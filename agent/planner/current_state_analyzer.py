@@ -43,9 +43,7 @@ class CurrentStateAnalyzer:
         current_page_text = obs_data.get("text", "") if isinstance(obs_data, dict) else str(obs_data)
 
         # Get context information
-        observation_summary = context_summary.get("observation_summary", "")
-        action_summary = context_summary.get("action_summary", "")
-        reflection_summary = context_summary.get("reflection_summary", "")
+        cur_summary = context_summary.get("summary", "")
 
         # Build state analysis prompt using template
         subtasks_str = "\n".join([f"{i+1}. {subtask}" for i, subtask in enumerate(subtasks)])
@@ -60,9 +58,7 @@ class CurrentStateAnalyzer:
                 user_goal=user_goal,
                 subtasks=subtasks_str,
                 current_page_text=current_page_text,
-                observation_summary=observation_summary,
-                action_summary=action_summary,
-                reflection_summary=reflection_summary
+                context_summary=cur_summary,
             )
         else:
             prompt = load_prompt_template(
@@ -71,9 +67,7 @@ class CurrentStateAnalyzer:
                 user_goal=user_goal,
                 subtasks=subtasks_str,
                 current_page_text=current_page_text,
-                observation_summary=observation_summary,
-                action_summary=action_summary,
-                reflection_summary=reflection_summary
+                context_summary=cur_summary,
             )
 
         try:

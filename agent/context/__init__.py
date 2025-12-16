@@ -56,6 +56,14 @@ class StateManager:
         """Get the most recent action."""
         return self.actions[-1] if self.actions else None
 
+    def get_latest_reflection(self) -> Dict[str, Any]:
+        """Get the most recent reflection."""
+        return self.reflections[-1] if self.reflections else None
+
+    def get_latest_intention(self) -> str:
+        """Get the most recent intention."""
+        return self.intentions[-1] if self.intentions else None
+
     def get_history(self) -> Dict[str, Any]:
         """Get complete execution history."""
         return {

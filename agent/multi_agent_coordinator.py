@@ -395,9 +395,6 @@ class MultiAgentCoordinator:
         # 1. Context Agent updates context
         print("🧠 Context Agent: Updating context...")
         try:
-            # Extract observations from trajectory for context generation
-            observations = [item["observation"] for item in self.trajectory 
-                           if isinstance(item, dict) and "observation" in item]
             
             context_result = self.context_agent.update_context(
                 trajectory=self.trajectory,
@@ -406,24 +403,16 @@ class MultiAgentCoordinator:
                 latest_intention=self.intentions[-1] if self.intentions else None,
                 latest_action=self.actions[-1] if self.actions else None,
                 latest_reflection=self.reflections[-1] if self.reflections else None,
-                # Pass complete lists from Coordinator to avoid state duplication
-                all_observations=observations,
-                all_actions=self.actions,
-                all_reflections=self.reflections,
-                all_intentions=self.intentions,
             )
             # Show only key context information
             summary = context_result.get("summary", "No summary")
-            print(f"🧠 Context: {summary[:100]}{'...' if len(summary) > 100 else ''}")
+            print(f"🧠 Context: {summary[:300]}{'...' if len(summary) > 300 else ''}")
 
             # Store response information for execution summary
 
             # Log context agent response summary with detailed breakdown
             context_response = {
                 "summary": summary,
-                "observation_summary": context_result.get("observation_summary", ""),
-                "action_summary": context_result.get("action_summary", ""),
-                "reflection_summary": context_result.get("reflection_summary", "")
             }
             self.log_agent_response("context_agent", step_number, context_response)
             
@@ -431,18 +420,11 @@ class MultiAgentCoordinator:
             print(f"🧠 Context Error: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}")
             context_result = {
                 "summary": "Error generating context",
-                "observation_summary": "",
-                "action_summary": "",
-                "reflection_summary": ""
             }
-
             # Log context agent error summary
             error_response = {
                 "error": str(e),
                 "summary": "Error generating context",
-                "observation_summary": "",
-                "action_summary": "",
-                "reflection_summary": ""
             }
             self.log_agent_response("context_agent", step_number, error_response)
 
@@ -528,7 +510,7 @@ class MultiAgentCoordinator:
                 "reasoning": planning_result["reasoning"],
                 "task_decomposed": planning_result["task_decomposed"]
             }
-            self.log_agent_response("planner_agent", step_number, error_response)
+        #     self.log_agent_response("planner_agent", step_number, error_response)
 
         # 3. Actor Agent executes intention
         print("🎬 Actor Agent: Executing intention...")

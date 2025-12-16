@@ -29,6 +29,8 @@ export OPENAI_API_KEY=sk-KJhxTaZUuCyi92U1I4ZOOpK173c94Qlbs9uGvc7BdCEro9wr
 export OPENAI_API_KEY=sk-QqeaDJ148kH7R5s2dBT1W5nCHu9PGXAKl8vD3VBYiBe5j45d
 export OPENAI_BASE_URL=https://aigc.x-see.cn/v1
 
+export HF_ENDPOINT=https://hf-mirror.com
+
 # Run the multi-agent script
 python run_multi_agent.py \
   --start_url "https://www.baidu.com" \

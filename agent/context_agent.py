@@ -31,6 +31,7 @@ class ContextAgent:
         self.enable_memory = memory_config.get("enable_memory", False)
         self.enable_memory_store = memory_config.get("enable_memory_store", False)
         self.memory_content = ""
+        self.current_summary = None
         if self.enable_memory or self.enable_memory_store:
             device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
             self.memory_bank = MemoryBank(
@@ -70,11 +71,6 @@ class ContextAgent:
         latest_intention: Optional[str] = None,
         latest_action: Optional[Action] = None,
         latest_reflection: Optional[Dict[str, Any]] = None,
-        # New parameters to receive data directly from Coordinator
-        all_observations: Optional[List[Observation]] = None,
-        all_actions: Optional[List[Action]] = None,
-        all_reflections: Optional[List[Dict[str, Any]]] = None,
-        all_intentions: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Update context state and generate comprehensive summary.
 
@@ -85,59 +81,35 @@ class ContextAgent:
             latest_intention: Most recent intention
             latest_action: Most recent action taken
             latest_reflection: Most recent reflection from Reflector Agent
-            all_observations: Complete list of observations from Coordinator (optional)
-            all_actions: Complete list of actions from Coordinator (optional)
-            all_reflections: Complete list of reflections from Coordinator (optional)
-            all_intentions: Complete list of intentions from Coordinator (optional)
 
         Returns:
             Dictionary containing updated context information
         """
         # Use data from Coordinator if provided, otherwise extract from trajectory
-        if all_observations is not None:
-            observations = all_observations
-        else:
-            # Extract observations from trajectory (fallback)
-            observations = self._extract_observations_from_trajectory(trajectory)
-        
-        if all_actions is not None:
-            actions = all_actions
-        else:
-            # Extract actions from trajectory (fallback)
-            actions = self._extract_actions_from_trajectory(trajectory)
-        
-        reflections = all_reflections if all_reflections is not None else []
-        intentions = all_intentions if all_intentions is not None else []
+        self.update_state(current_observation, latest_intention, latest_action, latest_reflection)
 
-        # Update state manager only for memory-related features
-        # This avoids duplicating the full state, but keeps memory functionality working
-        if self.enable_memory or self.enable_memory_store:
-            self.state_manager.set_user_goal(user_goal)
-            # Only store latest items for memory generation
-            if current_observation and current_observation not in self.state_manager.observations:
-                self.state_manager.add_observation(current_observation)
-            if latest_intention and latest_intention not in self.state_manager.intentions:
-                self.state_manager.add_intention(latest_intention)
-            if latest_action and latest_action not in self.state_manager.actions:
-                self.state_manager.add_action(latest_action)
-            if latest_reflection and latest_reflection not in self.state_manager.reflections:
-                self.state_manager.add_reflection(latest_reflection)
+        observations = self.state_manager.get_all_observations()
+        actions = self.state_manager.get_all_actions()
+        reflections = self.state_manager.get_all_reflections()
+        intentions = self.state_manager.get_all_intentions()
 
         # Generate context summary using data from Coordinator
-        summary, observation_summary, action_summary, reflection_summary = self.summary_generator.generate_summary(
+        summary, all_history_intentions, all_history_actions = self.summary_generator.generate_summary(
             user_goal=user_goal,
+            current_summary=self.current_summary,
             observations=observations,
             actions=actions,
-            reflections=reflections,
+            intentions=intentions,
         )
+        self.current_summary = summary
+
 
         # Return comprehensive context information
         return {
             "summary": summary,
             "memory_content": self.memory_content,
-            "observation_summary": observation_summary,
-            "action_summary": action_summary,
-            "reflection_summary": reflection_summary,
+            "history_intentions": all_history_intentions,
+            "history_actions": all_history_actions,
             "state_history": {
                 "observations": observations,
                 "actions": actions,
@@ -146,6 +118,7 @@ class ContextAgent:
                 "total_steps": len(actions),
             },
             "latest_observation": current_observation,
+            "latest_intention": latest_intention,
             "latest_action": latest_action,
         }
     
@@ -176,6 +149,7 @@ class ContextAgent:
             "state_history": history,
             "latest_observation": self.state_manager.get_latest_observation(),
             "latest_action": self.state_manager.get_latest_action(),
+            "latest_intention": self.state_manager.get_latest_intention(),
             "total_steps": history.get("total_steps", 0),
         }
 
@@ -282,7 +256,6 @@ class ContextAgent:
                 observations=self.state_manager.get_all_observations(),
                 intentions=self.state_manager.get_all_intentions(),
                 actions=self.state_manager.get_all_actions(),
-                reflections=self.state_manager.get_all_reflections(),
                 task_completed=task_completed,
                 window_size=self.window_size,
             )
