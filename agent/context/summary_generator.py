@@ -1,11 +1,15 @@
 """Context summary generation for maintaining agent awareness."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+import numpy as np
+
+from PIL import Image
 
 from browser_env import Action
-from browser_env.utils import Observation
+from browser_env.utils import Observation, pil_to_b64
 from llms import lm_config, call_llm
 from ..prompts.prompt_loader import load_prompt_template
+from ..utils import is_multimodal_model
 
 
 class SummaryGenerator:
@@ -13,6 +17,8 @@ class SummaryGenerator:
 
     def __init__(self, lm_config: lm_config.LMConfig) -> None:
         self.lm_config = lm_config
+        # Check if the model supports multimodal inputs
+        self.is_multimodal = is_multimodal_model(lm_config.model)
 
     def generate_summary(
         self,
@@ -72,38 +78,81 @@ Recent reflections: {len(recent_reflections)} performance analyses."""
         return summary, observation_summary, action_summary, reflection_summary
 
     def _summarize_observations(self, observations: List[Observation]) -> str:
-        """Summarize recent observations using LLM."""
+        """Summarize recent observations using VLM based purely on page screenshot.
+        
+        This method relies entirely on visual analysis of the page screenshot
+        to generate summaries, without using text observations.
+        """
         if not observations:
             return "No page observations available."
 
-        # Extract text content from recent observations
-        observation_texts = []
-        for i, obs in enumerate(observations[-3:], 1):  # Last 3 observations
-            text = obs.get("text", "")
-            if text:
-                # Truncate for brevity but keep meaningful content
-                truncated_text = text[:800] if len(text) > 800 else text
-                observation_texts.append(f"Page {i}: {truncated_text}")
+        # Get the raw image from the most recent observation
+        latest_image = None
+        latest_obs = observations[-1]
+        
+        image_raw = latest_obs.get("image_raw")
+        if image_raw is None:
+            # Fallback to regular image if image_raw not available
+            image_raw = latest_obs.get("image")
+        if image_raw is not None:
+            latest_image = image_raw
 
-        if not observation_texts:
-            return "No meaningful page content."
+        # Check if we can use multimodal approach
+        if not self.is_multimodal:
+            return "Multimodal model required for image-based observation summarization. Current model does not support vision."
+        
+        if latest_image is None:
+            return "No page screenshot available for visual analysis."
 
-        # Use LLM to generate intelligent summary of observations
+        # Use VLM to generate summary based purely on the screenshot
         try:
-            prompt = load_prompt_template(
+            prompt_text = load_prompt_template(
                 "context_agent",
-                "observation_summarization",
-                observations_text="\n\n".join(observation_texts)
+                "observation_summarization"
             )
 
-            summary = call_llm(
-                self.lm_config, [{"role": "user", "content": prompt}]
-            ).strip()
+            messages = self._build_multimodal_observation_prompt(
+                prompt_text, latest_image
+            )
+            summary = call_llm(self.lm_config, messages).strip()
+            
             return summary
         except Exception as e:
-            # Fallback to simple concatenation if LLM fails
+            # Fallback message if LLM fails
             print(f"Observation summarization LLM call failed: {e}")
-            return " | ".join(observation_texts)
+            return "Unable to analyze page screenshot. Visual analysis failed."
+
+    def _build_multimodal_observation_prompt(
+        self, 
+        prompt_text: str, 
+        image: np.ndarray
+    ) -> List[Dict[str, Any]]:
+        """Build multimodal prompt message for pure visual observation summarization.
+        
+        Args:
+            prompt_text: The text prompt for summarization (instructions only)
+            image: numpy array of the page screenshot (raw, without SOM annotations)
+            
+        Returns:
+            List of message dictionaries for the multimodal LLM API
+        """
+        # Convert numpy array to PIL Image
+        if isinstance(image, np.ndarray):
+            pil_image = Image.fromarray(image)
+        else:
+            pil_image = image
+        
+        # Build OpenAI Vision API format message - image first for better visual attention
+        content = [
+            {"type": "text", "text": "Current page screenshot:"},
+            {
+                "type": "image_url",
+                "image_url": {"url": pil_to_b64(pil_image)}
+            },
+            {"type": "text", "text": prompt_text}
+        ]
+        
+        return [{"role": "user", "content": content}]
 
     def _summarize_actions(self, actions: List[Action]) -> str:
         """Summarize recent actions."""

@@ -26,11 +26,12 @@
     "context_agent": {
       "observation_summarization": {
         "name": "Observation Summarization",
-        "task": "Generate intelligent summary of web page observations",
-        "template": "Generate a concise but comprehensive summary of these web page observations for context awareness.\n\nPAGE OBSERVATIONS:\n{observations_text}\n\nFocus on:\n1. Key page content and structure\n2. Important elements, forms, or interactive components\n3. Navigation paths or menus\n4. Search functionality or filters\n5. Product/service information if applicable\n6. Any error messages or unusual elements\n\nProvide a 3-4 sentence summary that captures the essential information from these observations that would be most useful for planning next actions in a web automation task:",
-        "variables": ["observations_text"],
+        "task": "Generate intelligent summary of web page based purely on visual analysis",
+        "template": "You are a visual analyst examining a web page screenshot to generate a concise summary for a web automation task.\n\nAnalyze the provided screenshot and describe what you see. Focus on:\n1. Overall page layout and visual structure\n2. Key interactive elements visible (buttons, links, forms, input fields, menus)\n3. Main content and information displayed on the page\n4. Navigation structure and current page state (e.g., which page/section is active)\n5. Any visual indicators of state (loading, errors, success messages, highlights)\n6. Important text content visible in the screenshot\n\nProvide a 3-4 sentence summary that captures the essential visual information about the current page state and what actions might be possible:",
+        "variables": [],
         "temperature": 0.6,
-        "max_tokens": 2048
+        "max_tokens": 2048,
+        "multimodal": true
       },
       "summary_generation": {
         "name": "Context Summary Generation",
@@ -105,7 +106,16 @@
         "max_tokens": 2048
       },
       "effectiveness_analysis": {
-        "name": "Action Effectiveness Analysis",
+        "name": "Action Effectiveness Analysis (Multimodal)",
+        "task": "Analyze action effectiveness by comparing before/after screenshots",
+        "template": "You are analyzing the effectiveness of a web automation action by comparing BEFORE and AFTER screenshots.\n\nCURRENT INTENTION: {current_intention}\n\nEXECUTED ACTION: {latest_action}\n\nCONTEXT: {context_summary}\n\nCompare the two screenshots provided (BEFORE and AFTER the action) and analyze:\n1. What visual changes occurred between the screenshots?\n2. Did the action meaningfully progress toward the intention?\n3. Are there any error messages, unexpected popups, or problems visible?\n4. Does the AFTER state look like expected progress?\n\nProvide a concise natural language assessment (2-4 sentences) describing whether the action was effective based on the visual changes observed.",
+        "variables": ["current_intention", "latest_action", "context_summary"],
+        "temperature": 0.5,
+        "max_tokens": 2048,
+        "multimodal": true
+      },
+      "effectiveness_analysis_text": {
+        "name": "Action Effectiveness Analysis (Text Fallback)",
         "task": "Analyze whether actions are making progress toward task completion",
         "template": "Analyze the effectiveness of this web automation action in natural language.\n\nCURRENT INTENTION: {current_intention}\n\nEXECUTED ACTION:\n{latest_action}\n\nCURRENT PROGRESS METRICS:\n{context_summary}\n\nRECENT EXECUTION CONTEXT:\n{trajectory_summary}\n\nProvide a natural language analysis of the action's effectiveness. Focus on:\n1. Did it meaningfully progress the task?\n2. Was it the right action for the current situation?\n3. Did it avoid creating new problems?\n4. How well did it align with the intention?\n\nReturn a concise natural language assessment (2-4 sentences) describing whether the action was effective and why.",
         "variables": ["current_intention", "latest_action", "context_summary", "trajectory_summary"],
@@ -113,7 +123,16 @@
         "max_tokens": 2048
       },
       "triple_summary": {
-        "name": "State Transition Triple Summary",
+        "name": "State Transition Triple Summary (Multimodal)",
+        "task": "Generate visual comparison summary of state transition (O_{t-1}, I_t, A_t, O_t)",
+        "template": "You are analyzing a state transition in a web automation task by comparing BEFORE and AFTER screenshots.\n\nCURRENT INTENTION (I_t): {current_intention}\n\nEXECUTED ACTION (A_t):\n- Type: {action_type}\n- Element: {element_id}\n- Text: {action_text}\n\nCompare the PREVIOUS STATE screenshot (before action) with the CURRENT STATE screenshot (after action) and provide:\n1. What was visible in the page before the action?\n2. What changes are visible after the action was executed?\n3. Did this action cause meaningful visual progress toward the goal?\n4. Any unexpected changes or issues visible?\n\nGenerate a natural language summary (2-3 sentences) describing what changed visually and whether it represents progress.",
+        "variables": ["current_intention", "action_type", "element_id", "action_text"],
+        "temperature": 0.6,
+        "max_tokens": 2048,
+        "multimodal": true
+      },
+      "triple_summary_text": {
+        "name": "State Transition Triple Summary (Text Fallback)",
         "task": "Generate enhanced summary of state transition (O_{t-1}, I_t, A_t, O_t)",
         "template": "Generate an enhanced summary of this state transition in the web automation task.\n\nPREVIOUS OBSERVATION (O_[t-1]):\n{t-1}\n\nCURRENT INTENTION (I_t):\n{current_intention}\n\nEXECUTED ACTION (A_t):\n- Type: {action_type}\n- Element: {element_id}\n- Text: {action_text}\n\nCURRENT OBSERVATION (O_t):\n{current_observation}\n\nProvide a concise but informative summary that describes:\n1. What was the state before the action?\n2. What was the intention and action taken?\n3. What was the resulting state after the action?\n4. Did this represent meaningful progress toward the goal?\n\nGenerate a natural language summary (2-3 sentences) that captures the essence of this state transition.",
         "variables": ["t-1", "current_intention", "action_type", "element_id", "action_text", "current_observation"],

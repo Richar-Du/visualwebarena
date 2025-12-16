@@ -6,7 +6,7 @@
   },
   "model": {
     "provider": "openai",
-    "model": "qwen3-vl-max",
+    "model": "gpt-4o",
     "mode": "chat",
     "temperature": 1.0,
     "top_p": 0.9,
@@ -24,7 +24,7 @@
     "current_viewport_only": true
   },
   "output": {
-    "result_dir": "demo_multi_agent_vlm",
+    "result_dir": "logs/demo_multi_agent_vlm",
     "save_trace": true,
     "render_screenshot": true,
     "verbose": true

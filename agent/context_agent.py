@@ -70,6 +70,11 @@ class ContextAgent:
         latest_intention: Optional[str] = None,
         latest_action: Optional[Action] = None,
         latest_reflection: Optional[Dict[str, Any]] = None,
+        # New parameters to receive data directly from Coordinator
+        all_observations: Optional[List[Observation]] = None,
+        all_actions: Optional[List[Action]] = None,
+        all_reflections: Optional[List[Dict[str, Any]]] = None,
+        all_intentions: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Update context state and generate comprehensive summary.
 
@@ -77,30 +82,53 @@ class ContextAgent:
             trajectory: Current execution trajectory
             user_goal: Original user goal/task
             current_observation: Latest page observation
+            latest_intention: Most recent intention
             latest_action: Most recent action taken
             latest_reflection: Most recent reflection from Reflector Agent
+            all_observations: Complete list of observations from Coordinator (optional)
+            all_actions: Complete list of actions from Coordinator (optional)
+            all_reflections: Complete list of reflections from Coordinator (optional)
+            all_intentions: Complete list of intentions from Coordinator (optional)
 
         Returns:
             Dictionary containing updated context information
         """
-        # Update state manager with new information (avoid duplicates)
+        # Use data from Coordinator if provided, otherwise extract from trajectory
+        if all_observations is not None:
+            observations = all_observations
+        else:
+            # Extract observations from trajectory (fallback)
+            observations = self._extract_observations_from_trajectory(trajectory)
+        
+        if all_actions is not None:
+            actions = all_actions
+        else:
+            # Extract actions from trajectory (fallback)
+            actions = self._extract_actions_from_trajectory(trajectory)
+        
+        reflections = all_reflections if all_reflections is not None else []
+        intentions = all_intentions if all_intentions is not None else []
 
-        self.update_state(
-            current_observation=current_observation,
-            latest_intention=latest_intention,
-            latest_action=latest_action,
-            latest_reflection=latest_reflection,
-        )
+        # Update state manager only for memory-related features
+        # This avoids duplicating the full state, but keeps memory functionality working
+        if self.enable_memory or self.enable_memory_store:
+            self.state_manager.set_user_goal(user_goal)
+            # Only store latest items for memory generation
+            if current_observation and current_observation not in self.state_manager.observations:
+                self.state_manager.add_observation(current_observation)
+            if latest_intention and latest_intention not in self.state_manager.intentions:
+                self.state_manager.add_intention(latest_intention)
+            if latest_action and latest_action not in self.state_manager.actions:
+                self.state_manager.add_action(latest_action)
+            if latest_reflection and latest_reflection not in self.state_manager.reflections:
+                self.state_manager.add_reflection(latest_reflection)
 
-        # Get complete execution history
-        history = self.state_manager.get_history()
-
-        # Generate context summary without progress metrics
+        # Generate context summary using data from Coordinator
         summary, observation_summary, action_summary, reflection_summary = self.summary_generator.generate_summary(
             user_goal=user_goal,
-            observations=self.state_manager.get_all_observations(),
-            actions=self.state_manager.get_all_actions(),
-            reflections=self.state_manager.get_all_reflections(),
+            observations=observations,
+            actions=actions,
+            reflections=reflections,
         )
 
         # Return comprehensive context information
@@ -110,10 +138,32 @@ class ContextAgent:
             "observation_summary": observation_summary,
             "action_summary": action_summary,
             "reflection_summary": reflection_summary,
-            "state_history": history,
-            "latest_observation": self.state_manager.get_latest_observation(),
-            "latest_action": self.state_manager.get_latest_action(),
+            "state_history": {
+                "observations": observations,
+                "actions": actions,
+                "reflections": reflections,
+                "intentions": intentions,
+                "total_steps": len(actions),
+            },
+            "latest_observation": current_observation,
+            "latest_action": latest_action,
         }
+    
+    def _extract_observations_from_trajectory(self, trajectory: Trajectory) -> List[Observation]:
+        """Extract observations from trajectory (fallback method)."""
+        observations = []
+        for item in trajectory:
+            if isinstance(item, dict) and "observation" in item:
+                observations.append(item["observation"])
+        return observations
+    
+    def _extract_actions_from_trajectory(self, trajectory: Trajectory) -> List[Action]:
+        """Extract actions from trajectory (fallback method)."""
+        actions = []
+        for item in trajectory:
+            if isinstance(item, dict) and "action_type" in item:
+                actions.append(item)
+        return actions
 
     def reset(self) -> None:
         """Reset all context state for a new task."""
@@ -129,7 +179,7 @@ class ContextAgent:
             "total_steps": history.get("total_steps", 0),
         }
 
-    def check_task_completion(self, user_goal: str) -> bool:
+    def check_task_completion(self, user_goal: str, actions: Optional[List[Action]] = None) -> bool:
         """Check if the task is considered complete based on current state.
 
         This is a simplified check - task completion is primarily determined
@@ -137,6 +187,7 @@ class ContextAgent:
 
         Args:
             user_goal: Original user goal
+            actions: List of actions (optional, uses state_manager if not provided)
 
         Returns:
             True if task appears complete, False otherwise
@@ -145,8 +196,9 @@ class ContextAgent:
         # 1. Max steps reached
         # 2. Actor generating a STOP action
         # This method provides a basic fallback check
-        history = self.state_manager.get_history()
-        actions = history.get("actions", [])
+        if actions is None:
+            history = self.state_manager.get_history()
+            actions = history.get("actions", [])
         
         # Check if the last action was a STOP action
         if actions and actions[-1].get("action_type") == "STOP":

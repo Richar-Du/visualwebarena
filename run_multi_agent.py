@@ -279,7 +279,7 @@ def test(args, config_file):
     if not instruction_path:
         # Select default instruction path based on observation type and model
         if is_multimodal_model and is_image_observation:
-            instruction_path = 'agent/prompts/jsons/p_multimodal_cot_id_actree_0s.json'
+            instruction_path = 'agent/prompts/jsons/p_som_cot_id_actree_0s.json'
         else:
             instruction_path = 'agent/prompts/jsons/p_cot_id_actree_3s.json'
 

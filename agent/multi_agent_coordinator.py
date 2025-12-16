@@ -147,15 +147,18 @@ class MultiAgentCoordinator:
             with open(self.observation_log_path, 'w', encoding='utf-8') as f:
                 json.dump(observations, f, indent=2, ensure_ascii=False)
 
-            # Save screenshot image if available
-            if observation.get("image") is not None:
+            # Save screenshot image if available (prefer image_raw for cleaner logs)
+            image_to_save = observation.get("image_raw")
+            if image_to_save is None:
+                image_to_save = observation.get("image")
+            if image_to_save is not None:
                 image_path = os.path.join(self.images_dir, f"step_{step_number:03d}.png")
                 # Convert numpy array to PIL Image and save
                 from PIL import Image
                 import numpy as np
 
-                if isinstance(observation["image"], np.ndarray):
-                    img = Image.fromarray(observation["image"])
+                if isinstance(image_to_save, np.ndarray):
+                    img = Image.fromarray(image_to_save)
                     img.save(image_path)
 
         except Exception as e:
@@ -180,14 +183,14 @@ class MultiAgentCoordinator:
         Returns:
             Dictionary containing complete execution results
         """
+        # Reset all state before starting a new task
+        # This ensures clean separation between consecutive task executions
+        self.reset()
+        
         # Initialize task
         self.user_goal = user_goal
         self.max_steps = max_steps
         self.current_observation = start_observation
-
-        # Reset meta_data for new task execution (required by DirectPromptConstructor)
-        # Initialize with "None" as the first action, matching run.py implementation
-        self.meta_data = {"action_history": ["None"]}
 
         # Initialize workflow and monitoring
         workflow_init = self.workflow_manager.initialize_workflow(max_steps)
@@ -212,67 +215,76 @@ class MultiAgentCoordinator:
 
         # Initialize trajectory with initial state
         # This is required because DirectPromptConstructor expects trajectory[-1] to exist
-        if not self.trajectory:
-            # Handle different formats of start_observation
-            if start_observation is None:
-                # No observation provided, create empty state
-                initial_observation = {"text": "", "image": None}
-                initial_info = {"page": type('SimplePage', (), {'url': ''})(), "observation_metadata": {}}
-            elif isinstance(start_observation, dict) and "observation" in start_observation and "info" in start_observation:
-                # start_observation is already in StateInfo format: {"observation": obs, "info": info}
-                initial_observation = start_observation["observation"]
-                # Deep copy observation_metadata to avoid reference sharing issues
-                source_info = start_observation["info"]
-                initial_info = {
-                    "page": source_info.get("page"),
-                    "fail_error": source_info.get("fail_error", ""),
-                    "observation_metadata": copy.deepcopy(source_info.get("observation_metadata", {}))
-                }
-                # Ensure observation has both text and image fields
-                if isinstance(initial_observation, dict):
-                    if "text" not in initial_observation:
-                        initial_observation["text"] = ""
-                    if "image" not in initial_observation:
-                        initial_observation["image"] = None
-            else:
-                # start_observation is the observation itself
-                initial_observation = start_observation
-                # Ensure observation is a dict with "text" and "image" keys
-                if isinstance(initial_observation, dict):
-                    if "text" not in initial_observation:
-                        initial_observation["text"] = ""
-                    if "image" not in initial_observation:
-                        initial_observation["image"] = None
-                else:
-                    initial_observation = {"text": str(initial_observation) if initial_observation else "", "image": None}
-
-                # Create a simple page-like object with url attribute
-                class SimplePage:
-                    def __init__(self, url: str = ""):
-                        self.url = url
-                initial_info = {
-                    "page": SimplePage(url=""),  # Will be updated when browser is initialized
-                    "observation_metadata": {}
-                }
-
-            initial_state_info = {
-                "observation": initial_observation,
-                "info": initial_info
+        # Note: trajectory is always empty here since we call reset() at the start
+        # Handle different formats of start_observation
+        if start_observation is None:
+            # No observation provided, create empty state
+            initial_observation = {"text": "", "image": None, "image_raw": None}
+            initial_info = {"page": type('SimplePage', (), {'url': ''})(), "observation_metadata": {}}
+        elif isinstance(start_observation, dict) and "observation" in start_observation and "info" in start_observation:
+            # start_observation is already in StateInfo format: {"observation": obs, "info": info}
+            initial_observation = start_observation["observation"]
+            # Deep copy observation_metadata to avoid reference sharing issues
+            source_info = start_observation["info"]
+            initial_info = {
+                "page": source_info.get("page"),
+                "fail_error": source_info.get("fail_error", ""),
+                "observation_metadata": copy.deepcopy(source_info.get("observation_metadata", {}))
             }
-            self.trajectory.append(initial_state_info)
-            self.current_observation = initial_observation
+            # Ensure observation has text, image, and image_raw fields
+            if isinstance(initial_observation, dict):
+                if "text" not in initial_observation:
+                    initial_observation["text"] = ""
+                if "image" not in initial_observation:
+                    initial_observation["image"] = None
+                if "image_raw" not in initial_observation:
+                    # Fallback: use image as image_raw if not available
+                    initial_observation["image_raw"] = initial_observation.get("image")
+        else:
+            # start_observation is the observation itself
+            initial_observation = start_observation
+            # Ensure observation is a dict with "text", "image", and "image_raw" keys
+            if isinstance(initial_observation, dict):
+                if "text" not in initial_observation:
+                    initial_observation["text"] = ""
+                if "image" not in initial_observation:
+                    initial_observation["image"] = None
+                if "image_raw" not in initial_observation:
+                    # Fallback: use image as image_raw if not available
+                    initial_observation["image_raw"] = initial_observation.get("image")
+            else:
+                initial_observation = {"text": str(initial_observation) if initial_observation else "", "image": None, "image_raw": None}
 
-            # Save initial screenshot as step_000.png
-            if initial_observation.get("image") is not None:
-                initial_image_path = os.path.join(self.images_dir, "step_000.png")
-                # Convert numpy array to PIL Image and save
-                from PIL import Image
-                import numpy as np
+            # Create a simple page-like object with url attribute
+            class SimplePage:
+                def __init__(self, url: str = ""):
+                    self.url = url
+            initial_info = {
+                "page": SimplePage(url=""),  # Will be updated when browser is initialized
+                "observation_metadata": {}
+            }
 
-                if isinstance(initial_observation["image"], np.ndarray):
-                    img = Image.fromarray(initial_observation["image"])
-                    img.save(initial_image_path)
-                    print(f"📸 Saved initial screenshot as {initial_image_path}")
+        initial_state_info = {
+            "observation": initial_observation,
+            "info": initial_info
+        }
+        self.trajectory.append(initial_state_info)
+        self.current_observation = initial_observation
+
+        # Save initial screenshot as step_000.png (prefer image_raw for cleaner logs)
+        image_to_save = initial_observation.get("image_raw")
+        if image_to_save is None:
+            image_to_save = initial_observation.get("image")
+        if image_to_save is not None:
+            initial_image_path = os.path.join(self.images_dir, "step_000.png")
+            # Convert numpy array to PIL Image and save
+            from PIL import Image
+            import numpy as np
+
+            if isinstance(image_to_save, np.ndarray):
+                img = Image.fromarray(image_to_save)
+                img.save(initial_image_path)
+                print(f"📸 Saved initial screenshot as {initial_image_path}")
         
         # Main execution loop
         while True:
@@ -318,7 +330,7 @@ class MultiAgentCoordinator:
         )
 
         # Log final execution summary - use context agent completion check
-        task_completed = self.context_agent.check_task_completion(self.user_goal)
+        task_completed = self.context_agent.check_task_completion(self.user_goal, actions=self.actions)
 
         if self.enable_memory_store:
             self.context_agent.generate_and_store_memory(task_completed)
@@ -383,6 +395,10 @@ class MultiAgentCoordinator:
         # 1. Context Agent updates context
         print("🧠 Context Agent: Updating context...")
         try:
+            # Extract observations from trajectory for context generation
+            observations = [item["observation"] for item in self.trajectory 
+                           if isinstance(item, dict) and "observation" in item]
+            
             context_result = self.context_agent.update_context(
                 trajectory=self.trajectory,
                 user_goal=self.user_goal,
@@ -390,6 +406,11 @@ class MultiAgentCoordinator:
                 latest_intention=self.intentions[-1] if self.intentions else None,
                 latest_action=self.actions[-1] if self.actions else None,
                 latest_reflection=self.reflections[-1] if self.reflections else None,
+                # Pass complete lists from Coordinator to avoid state duplication
+                all_observations=observations,
+                all_actions=self.actions,
+                all_reflections=self.reflections,
+                all_intentions=self.intentions,
             )
             # Show only key context information
             summary = context_result.get("summary", "No summary")
@@ -427,7 +448,7 @@ class MultiAgentCoordinator:
 
 
         # Check for task completion using context agent's completion check
-        if self.context_agent.check_task_completion(self.user_goal):
+        if self.context_agent.check_task_completion(self.user_goal, actions=self.actions):
             return {
                 "should_terminate": True,
                 "termination_reason": "Task completed",
@@ -517,13 +538,15 @@ class MultiAgentCoordinator:
             meta_data_for_action = self.meta_data.copy()
             meta_data_for_action["step_number"] = step_number
             
-            # Ensure current_observation has both text and image fields
-            current_obs = self.current_observation or {"text": "", "image": None}
+            # Ensure current_observation has text, image, and image_raw fields
+            current_obs = self.current_observation or {"text": "", "image": None, "image_raw": None}
             if isinstance(current_obs, dict):
                 if "text" not in current_obs:
                     current_obs["text"] = ""
                 if "image" not in current_obs:
                     current_obs["image"] = None
+                if "image_raw" not in current_obs:
+                    current_obs["image_raw"] = current_obs.get("image")
             
             execution_result = self.actor_agent.execute_intention(
                 intention=current_intention,
@@ -544,14 +567,17 @@ class MultiAgentCoordinator:
                         print(f"🔍 Executing action in browser: {executed_action.get('action_type', 'UNKNOWN')}")
                         obs, reward, terminated, truncated, info = self.browser_env.step(executed_action)
 
-                        # Ensure observation has both text and image fields
+                        # Ensure observation has text, image, and image_raw fields
                         if isinstance(obs, dict):
                             if "text" not in obs:
                                 obs["text"] = ""
                             if "image" not in obs:
                                 obs["image"] = None
+                            if "image_raw" not in obs:
+                                # Fallback: use image as image_raw if not available
+                                obs["image_raw"] = obs.get("image")
                         else:
-                            obs = {"text": str(obs) if obs else "", "image": None}
+                            obs = {"text": str(obs) if obs else "", "image": None, "image_raw": None}
 
                         # Update current observation with new browser state
                         self.current_observation = obs  # Keep as observation format
@@ -747,5 +773,29 @@ class MultiAgentCoordinator:
         """Get current context summary without full update."""
         return self.context_agent.get_current_state()
 
-
-  
+    def reset(self) -> None:
+        """Reset all execution state for a new task.
+        
+        This method should be called before starting a new task to ensure
+        clean state separation between consecutive task executions.
+        """
+        # Reset coordinator execution state
+        self.trajectory = []
+        self.intentions = []
+        self.actions = []
+        self.reflections = []
+        self.meta_data = {"action_history": ["None"]}
+        self.user_goal = ""
+        self.current_observation = None
+        
+        # Reset all sub-agents
+        self.context_agent.reset()
+        self.planner_agent.reset_planning_state()
+        self.actor_agent.reset_intention_history()
+        self.reflector_agent.reset_reflection_history()
+        
+        # Reset coordination components
+        self.workflow_manager.reset_workflow()
+        
+        # Reset logging for new task
+        self._setup_logging()

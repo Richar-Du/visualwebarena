@@ -1113,7 +1113,15 @@ class ImageObservationProcessor(ObservationProcessor):
             or rect1[3] < rect2[1] + padding
         )
 
-    def process(self, page: Page) -> npt.NDArray[np.uint8]:
+    def process(self, page: Page) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.uint8] | None, str]:
+        """Process page and return observation images.
+        
+        Returns:
+            tuple: (image_obs, image_raw, content_str)
+                - image_obs: The main observation image (SOM annotated if image_som mode)
+                - image_raw: Raw screenshot without SOM annotations (only for image_som mode, None otherwise)
+                - content_str: Text content extracted from page elements
+        """
         try:
             browser_info = self.fetch_browser_info(page)
         except Exception:
@@ -1128,6 +1136,8 @@ class ImageObservationProcessor(ObservationProcessor):
                 screenshot_bytes = page.screenshot()
                 som_bboxes = self.get_page_bboxes(page)
                 screenshot_img = Image.open(BytesIO(screenshot_bytes))
+                # Save raw screenshot before drawing bounding boxes
+                raw_screenshot = np.array(screenshot_img)
                 bbox_img, id2center, content_str = self.draw_bounding_boxes(
                     som_bboxes,
                     screenshot_img,
@@ -1136,12 +1146,14 @@ class ImageObservationProcessor(ObservationProcessor):
                 self.som_id_info = id2center
                 self.meta_data["obs_nodes_info"] = id2center
                 screenshot_som = np.array(bbox_img)
-                return screenshot_som, content_str
+                return screenshot_som, raw_screenshot, content_str
             except:
                 page.wait_for_event("load")
                 screenshot_bytes = page.screenshot()
                 som_bboxes = self.get_page_bboxes(page)
                 screenshot_img = Image.open(BytesIO(screenshot_bytes))
+                # Save raw screenshot before drawing bounding boxes
+                raw_screenshot = np.array(screenshot_img)
                 bbox_img, id2center, content_str = self.draw_bounding_boxes(
                     som_bboxes,
                     screenshot_img,
@@ -1150,14 +1162,15 @@ class ImageObservationProcessor(ObservationProcessor):
                 self.som_id_info = id2center
                 self.meta_data["obs_nodes_info"] = id2center
                 screenshot_som = np.array(bbox_img)
-                return screenshot_som, content_str
+                return screenshot_som, raw_screenshot, content_str
         else:
             try:
                 screenshot = png_bytes_to_numpy(page.screenshot())
             except:
                 page.wait_for_event("load")
                 screenshot = png_bytes_to_numpy(page.screenshot())
-            return screenshot, ""
+            # For non-SOM modes, image_raw is None (same as image_obs)
+            return screenshot, None, ""
 
     def fetch_browser_info(self, page: Page) -> BrowserInfo:
         client = page.context.new_cdp_session(page)
@@ -1267,11 +1280,24 @@ class ObservationHandler:
         return spaces.Dict({"text": text_space, "image": image_space})
 
     def get_observation(self, page: Page) -> dict[str, Observation]:
+        """Get observation from page.
+        
+        Returns:
+            dict with keys:
+                - "text": Text observation (accessibility tree or SOM content)
+                - "image": Main image observation (SOM annotated for image_som mode)
+                - "image_raw": Raw screenshot without annotations (for Context/Reflector agents)
+        """
         text_obs = self.text_processor.process(page)
-        image_obs, content_str = self.image_processor.process(page)
+        image_obs, image_raw, content_str = self.image_processor.process(page)
         if content_str != "":
             text_obs = content_str
-        return {"text": text_obs, "image": image_obs}
+        
+        # If image_raw is None (non-SOM modes), use image_obs as the raw image
+        if image_raw is None:
+            image_raw = image_obs
+            
+        return {"text": text_obs, "image": image_obs, "image_raw": image_raw}
 
     def get_observation_metadata(self) -> dict[str, ObservationMetadata]:
         return {
