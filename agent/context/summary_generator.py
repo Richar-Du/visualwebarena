@@ -167,11 +167,8 @@ class SummaryGenerator:
         """
         content = []
         obs_num = len(recent_observations)
-
-        if obs_num == 1:
-            content += self._get_obs_message(recent_observations[0], 0)
-        else:
-            content += self._get_obs_message(recent_observations[0], 1)
+        content += self._get_obs_message(recent_observations[0], 1)
+        if obs_num > 1:
             for idx, (intention, act, obs) in enumerate(zip(recent_intentions, recent_actions, recent_observations[1:])):
                 content += self._get_intention_message(intention, idx+2)
                 content += self._get_action_message(act, idx+2)

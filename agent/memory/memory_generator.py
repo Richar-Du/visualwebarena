@@ -4,7 +4,10 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 import json
 
-from browser_env.utils import Observation
+import numpy as np
+from PIL import Image
+
+from browser_env.utils import Observation, pil_to_b64
 
 from llms import lm_config, call_llm
 from ..prompts.prompt_loader import load_prompt_template
@@ -30,7 +33,6 @@ class MemoryGenerator:
                                        observations: List[Observation],
                                        intentions: List[str],
                                        actions: List[Action],
-                                       reflections: List[Dict[str, Any]],
                                        task_completed: bool,
                                        window_size: int = 3
                                     ) -> Dict[str, Any]:
@@ -40,7 +42,6 @@ class MemoryGenerator:
             user_goal: Original user goal
             intentions: List of intentions generated
             actions: List of actions taken
-            reflections: List of reflections
             task_completed: Whether the task was completed successfully
 
         Returns:
@@ -51,7 +52,6 @@ class MemoryGenerator:
 
 
         assert(len(intentions) == len(actions))
-        assert(len(reflections) == len(actions))
         assert( (len(observations)-1) == len(actions))
 
 
@@ -61,7 +61,6 @@ class MemoryGenerator:
             observations[:window_size+1], # 多包涵一个初始页
             intentions[:window_size],
             actions[:window_size],
-            reflections[:window_size],
             task_completed
         )
 
@@ -69,7 +68,6 @@ class MemoryGenerator:
             "success_rate": 1.0 if task_completed else 0.0,
             "intentions_count": len(intentions),
             "actions_count": len(actions),
-            "reflections_count": len(reflections)
         })
 
         # Phase 2: Iterative refinement with full trajectory
@@ -80,7 +78,6 @@ class MemoryGenerator:
             partial_observations = observations[start_idx:end_idx+1] # 多包涵一个结束页
             partial_intentions = intentions[start_idx:end_idx]
             partial_actions = actions[start_idx:end_idx]
-            partial_reflections = reflections[start_idx:end_idx]
             history_intentions = intentions[:start_idx]
             history_actions = actions[:start_idx]
 
@@ -90,7 +87,6 @@ class MemoryGenerator:
                 partial_observations,
                 partial_intentions,
                 partial_actions,
-                partial_reflections,
                 history_intentions,
                 history_actions,
                 start_idx,
@@ -105,31 +101,29 @@ class MemoryGenerator:
                                  partial_observations: List[Observation],
                                  partial_intentions: List[str],
                                  partial_actions: List[Action],
-                                 partial_reflections: List[Dict[str, Any]],
                                  task_completed: bool
                                  ) -> Dict[str, Any]:
         """Generate initial memory from partial trajectory."""
         try:
-            # Create summarized trajectory data
-            trajectory_summary = self._summarize_trajectory(
-                partial_observations,
-                partial_intentions,
-                partial_actions,
-                partial_reflections,
-                start_idx = 0
-            )
-
             # Generate initial memory using LLM
             prompt = load_prompt_template(
                 "memory_generator",
                 "memory_initial_generation",
                 user_goal=user_goal,
-                trajectory_summary=trajectory_summary,
                 task_completed=task_completed
             )
 
+            messages = self._get_trajectory_message(
+                prompt,
+                partial_observations,
+                partial_intentions,
+                partial_actions,
+                start_idx=0
+            )
+
+
             response = call_llm(
-                self.lm_config, [{"role": "user", "content": prompt}]
+                self.lm_config, messages
             ).replace("```json", "").replace("```", "").strip()
 
             # Parse response
@@ -144,7 +138,7 @@ class MemoryGenerator:
             return {
                 "title": memory_data.get("title", f"Task: {user_goal[:50]}..."),
                 "description": memory_data.get("description", f"Experience with task: {user_goal}"),
-                "content": memory_data.get("content", trajectory_summary[:800]),
+                "content": "",
                 "phase": "initial"
             }
 
@@ -164,7 +158,6 @@ class MemoryGenerator:
                                            partial_observations: List[Observation],
                                            partial_intentions: List[str],
                                            partial_actions: List[Action],
-                                           partial_reflections: List[Dict[str, Any]],
                                            history_intentions: List[str],
                                            history_actions: List[Action],
                                            start_idx: int,
@@ -173,14 +166,6 @@ class MemoryGenerator:
 
 
         try:
-            # Create comprehensive summaries
-            trajectory_summary = self._summarize_trajectory(
-                partial_observations,
-                partial_intentions,
-                partial_actions,
-                partial_reflections,
-                start_idx = start_idx
-            )
 
             history_intention_text = self._get_history_intention_text(history_intentions)
             history_action_text = self._get_history_action_text(history_actions)
@@ -191,14 +176,21 @@ class MemoryGenerator:
                 "memory_refinement",
                 initial_memory=initial_memory,
                 user_goal=user_goal,
-                trajectory_summary=trajectory_summary,
                 history_intentions=history_intention_text,
                 history_actions=history_action_text,
                 task_completed=task_completed
             )
 
+            messages = self._get_trajectory_message(
+                prompt,
+                partial_observations,
+                partial_intentions,
+                partial_actions,
+                start_idx=start_idx
+            )
+
             response = call_llm(
-                self.lm_config, [{"role": "user", "content": prompt}]
+                self.lm_config, messages
             ).replace("```json", "").replace("```", "").strip()
 
             # Parse refined memory data
@@ -228,14 +220,69 @@ class MemoryGenerator:
             })
             return refined_memory
 
-    def _get_obs_text(self, obs: Observation, idx: int) -> str:
+    def _get_obs_message(self, obs: Observation, idx: int):
         """Extract text from observation, truncating if necessary."""
-        text = obs.get("text", "")
-        if text:
-            # Truncate for brevity but keep meaningful content
-            truncated_text = text[:800] + "..." if len(text) > 800 else text
-            return f"Page {idx}: \n{truncated_text}"
-        return f"Page {idx}: None"
+        obs_text = obs.get("text", "")
+        if obs_text:
+            truncated_text = obs_text[:800] + "..." if len(obs_text) > 800 else obs_text
+            obs_text = f"Page {idx} content: \n{truncated_text}\n"
+        else:
+            obs_text = f"Page {idx}: None\n"
+
+        obs_image = obs.get("image")
+        if obs_image is None:
+            obs_image = obs.get("image_raw")
+
+        if isinstance(obs_image, np.ndarray):
+            obs_image = Image.fromarray(obs_image)
+
+        content = [
+            {"type": "text", "text": f"Page {idx} screenshot: "},
+            {
+                "type": "image_url",
+                "image_url": {"url": pil_to_b64(obs_image)}
+            },
+            {"type": "text", "text": obs_text},
+        ]
+
+        return content
+
+    def _get_intention_message(self, intention: str, idx: int):
+        """Extract text from intention, truncating if necessary."""
+        content = [
+            {"type": "text", "text": self._get_intention_text(intention, idx)},
+        ]
+        return content
+
+    def _get_action_message(self, action: Action, idx: int):
+        """Extract text from action, truncating if necessary."""
+        content = [
+            {"type": "text", "text": self._get_action_text(action, idx)},
+        ]
+
+        return content
+
+    def _get_trajectory_message(self,
+                        prompt_text: str,
+                        partial_observations: List[Observation],
+                        partial_intentions: List[str],
+                        partial_actions: List[Action],
+                        start_idx: int
+        ) -> List[Dict[str, Any]]:
+        """Generate trajectory message for LLM input."""
+        content = []
+        obs_num = len(partial_observations)
+        content += self._get_obs_message(partial_observations[0], start_idx)
+        if obs_num > 1:
+            for i, (intention, action, obs) in enumerate(zip(partial_intentions, partial_actions, partial_observations[1:]), 1):
+                content += self._get_intention_message(intention, start_idx+i)
+                content += self._get_action_message(action, start_idx+i)
+                content += self._get_obs_message(obs, start_idx+i)
+
+        content.append({"type": "text", "text": prompt_text})
+        messages = [{"role": "user", "content": content}]
+
+        return messages
 
     def _get_intention_text(self, intention: str, idx: int) -> str:
         """Extract text from intention, truncating if necessary."""
@@ -247,39 +294,9 @@ class MemoryGenerator:
 
     def _get_action_text(self, action: Action, idx: int) -> str:
         """Extract text from action, truncating if necessary."""
-
         action_str = action2str(action, "som", "")
         action_text = f"Action {idx}: {action_str}"
-
         return action_text
-
-    def _get_reflection_text(self, reflection: Dict[str, Any], idx: int) -> str:
-        text_parts = []
-
-        # Add effectiveness analysis
-        effectiveness = reflection.get("effectiveness_analyzer", "")
-
-        if effectiveness:
-            effectiveness = effectiveness[:200] + "..." if len(effectiveness) > 200 else effectiveness
-            text_parts.append(f"Effectiveness: {effectiveness}")
-
-        # Add triple summary
-        triple_summary = reflection.get("triple_summary", "")
-        if triple_summary:
-            triple_summary = triple_summary[:200] + "..." if len(triple_summary) > 200 else triple_summary
-            text_parts.append(f"State Transition: {triple_summary}")
-
-        # Add pattern detection summary
-        pattern_detector = reflection.get("pattern_detector", {})
-        if pattern_detector.get("patterns_detected", False):
-            detection_summary = pattern_detector.get("detection_summary", "")
-            if detection_summary:
-                detection_summary = detection_summary[:200] + "..." if len(detection_summary) > 200 else detection_summary
-                text_parts.append(f"Patterns: {detection_summary}")
-
-        reflection_text = f"Reflection {idx}: \n" + "\n".join(text_parts)
-
-        return reflection_text
 
     def _get_history_intention_text(self, intentions: List[str]) -> str:
         """Extract text from intentions, truncating if necessary."""
@@ -290,32 +307,6 @@ class MemoryGenerator:
         """Extract text from actions, truncating if necessary."""
         action_texts = [self._get_action_text(action, i+1) for i, action in enumerate(actions)]
         return "\n".join(action_texts)
-
-    def _summarize_trajectory(self,
-                              observations: List[Observation],
-                              intentions: List[str],
-                              actions: List[Action],
-                              reflections: List[Dict[str, Any]],
-                              start_idx: int = 0) -> str:
-
-        """Create a summary of the trajectory."""
-        if not observations:
-            return "Empty trajectory"
-
-        trajectory_texts = []
-        trajectory_texts.append(self._get_obs_text(observations[0], start_idx))
-        observations = observations[1:]
-
-        for i, (obs, intention, action, reflection) in enumerate(
-                                                            zip(observations, intentions, actions, reflections),
-                                                            1):
-            idx = start_idx + i
-            trajectory_texts.append(self._get_intention_text(intention, idx))
-            trajectory_texts.append(self._get_action_text(action, idx))
-            trajectory_texts.append(self._get_obs_text(obs, idx))
-            trajectory_texts.append(self._get_reflection_text(reflection, idx))
-
-        return "\n\n".join(trajectory_texts)
 
     def _parse_memory_response(self, response: str) -> Dict[str, Any]:
         """Parse memory response when JSON parsing fails with a simplified approach.

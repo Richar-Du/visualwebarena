@@ -256,7 +256,6 @@ class ContextAgent:
                 observations=self.state_manager.get_all_observations(),
                 intentions=self.state_manager.get_all_intentions(),
                 actions=self.state_manager.get_all_actions(),
-                reflections=self.state_manager.get_all_reflections(),
                 task_completed=task_completed,
                 window_size=self.window_size,
             )
