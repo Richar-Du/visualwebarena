@@ -1,4 +1,8 @@
-"""Multi-Agent Coordinator for managing collaborative agent execution."""
+"""Multi-Agent Coordinator for managing collaborative agent execution.
+
+This module coordinates Context, Planner, Actor, and Reflector agents
+with explicit subtask state management and task completion handling.
+"""
 
 from typing import Any, Dict, List, Optional, Union
 import json
@@ -8,7 +12,7 @@ from datetime import datetime
 
 from PIL import Image
 
-from browser_env import Action, Trajectory
+from browser_env import Action, ActionTypes, Trajectory
 from browser_env.helper_functions import get_action_description
 from llms import lm_config
 
@@ -38,6 +42,12 @@ class MultiAgentCoordinator:
 
     Manages the interaction between Context, Planner, Actor, and Reflector agents
     to achieve complex web automation tasks through coordinated execution.
+    
+    Key features:
+    - Explicit subtask state tracking via SubtaskManager
+    - Subtask completion detection and progression
+    - Subtask revision when needed
+    - Task completion and stop action handling
     """
 
     def __init__(self, lm_config: lm_config.LMConfig,
@@ -76,6 +86,7 @@ class MultiAgentCoordinator:
         self.log_file_path = os.path.join(result_dir, "agent_responses.log")
         self.observation_log_path = os.path.join(result_dir, "observations.json")
         self.images_dir = os.path.join(result_dir, "images")
+        self.images_som_dir = os.path.join(result_dir, "images_som")
         self._setup_logging()
 
         # Execution state
@@ -92,6 +103,9 @@ class MultiAgentCoordinator:
         self.user_goal: str = ""
         self.max_steps: int = 30
         self.current_observation: Optional["ObservationTypeAlias"] = None
+        
+        # Stop action data storage (for future evaluation use)
+        self.stop_action_data: Optional[Dict[str, Any]] = None
 
     def _setup_logging(self) -> None:
         """Setup logging for agent responses."""
@@ -101,6 +115,9 @@ class MultiAgentCoordinator:
 
             # Create images directory
             os.makedirs(self.images_dir, exist_ok=True)
+
+            # Create images_som directory for SOM-annotated screenshots
+            os.makedirs(self.images_som_dir, exist_ok=True)
 
             # Create or clear the log file
             with open(self.log_file_path, 'w', encoding='utf-8') as f:
@@ -160,6 +177,17 @@ class MultiAgentCoordinator:
                 if isinstance(image_to_save, np.ndarray):
                     img = Image.fromarray(image_to_save)
                     img.save(image_path)
+
+            # Save SOM-annotated screenshot (image with bounding boxes and IDs)
+            image_som = observation.get("image")
+            if image_som is not None:
+                image_som_path = os.path.join(self.images_som_dir, f"step_{step_number:03d}.png")
+                from PIL import Image
+                import numpy as np
+
+                if isinstance(image_som, np.ndarray):
+                    img_som = Image.fromarray(image_som)
+                    img_som.save(image_som_path)
 
         except Exception as e:
             print(f"Warning: Failed to log observation for step {step_number}: {e}")
@@ -285,6 +313,21 @@ class MultiAgentCoordinator:
                 img = Image.fromarray(image_to_save)
                 img.save(initial_image_path)
                 print(f"📸 Saved initial screenshot as {initial_image_path}")
+
+        # Save initial SOM-annotated screenshot
+        image_som = initial_observation.get("image")
+        if image_som is not None:
+            initial_som_path = os.path.join(self.images_som_dir, "step_000.png")
+            from PIL import Image
+            import numpy as np
+
+            if isinstance(image_som, np.ndarray):
+                img_som = Image.fromarray(image_som)
+                img_som.save(initial_som_path)
+                print(f"📸 Saved initial SOM screenshot as {initial_som_path}")
+        
+        # Track continuation decision for final summary
+        continuation_decision = {"reason": "Execution started"}
         
         # Main execution loop
         while True:
@@ -311,6 +354,9 @@ class MultiAgentCoordinator:
 
                 # Check for early termination
                 if step_result.get("should_terminate", False):
+                    termination_reason = step_result.get("termination_reason", "Unknown")
+                    print(f"🛑 Task terminated: {termination_reason}")
+                    continuation_decision["reason"] = termination_reason
                     break
 
                 # Update current observation
@@ -320,9 +366,30 @@ class MultiAgentCoordinator:
                 
             except Exception as e:
                 # Record error and continue
+                print(f"❌ Execution error: {e}")
                 break
 
         # Finalize execution
+        # Ensure trajectory ends with an Action for compatibility with evaluators
+        from browser_env.actions import create_stop_action, ActionTypes
+        from beartype.door import is_bearable
+        from browser_env import Action, is_bearable
+        
+        # Check if trajectory is empty or the last element is not an Action
+        if not self.trajectory or not is_bearable(self.trajectory[-1], Action):
+            # If we have a stored stop action from actor agent, use it
+            if self.stop_action_data and "raw_action" in self.stop_action_data:
+                # Use the original stop action from actor agent
+                final_stop_action = self.stop_action_data["raw_action"]
+                print("🔧 Using stored STOP action from actor agent for trajectory")
+            else:
+                # Create a new STOP action
+                final_stop_action = create_stop_action("Task completed")
+                print("🔧 Created new STOP action for trajectory")
+            
+            # Add the STOP action to ensure trajectory ends with an Action
+            self.trajectory.append(final_stop_action)
+        
         final_context_summary = self._get_current_context_summary()
         workflow_final = self.workflow_manager.finalize_workflow(
             final_state="completed",
@@ -341,7 +408,8 @@ class MultiAgentCoordinator:
             "completion_percentage": "Completed" if task_completed else "In Progress",
             "total_intentions": len(self.intentions),
             "total_actions": len(self.actions),
-            "total_reflections": len(self.reflections)
+            "total_reflections": len(self.reflections),
+            "stop_action_data": self.stop_action_data,  # Include stop action data
         }
         self.log_agent_response("execution_summary", len(self.actions), final_summary)
 
@@ -362,6 +430,7 @@ class MultiAgentCoordinator:
             },
             "workflow_results": workflow_final,
             "final_context": final_context_summary,
+            "stop_action_data": self.stop_action_data,  # Include stop action data
         }
 
     def _register_agents(self) -> None:
@@ -458,17 +527,21 @@ class MultiAgentCoordinator:
             current_step_index = planning_result.get("current_step_index", 0)
             total_subtasks = planning_result.get("total_subtasks", 0)
 
-            print(f"🎯 Current Subtask: {current_subtask[:100]}{'...' if len(current_subtask) > 100 else ''}")
+            print(f"🎯 Current Subtask [{current_step_index + 1}/{total_subtasks}]: {current_subtask[:100]}{'...' if len(current_subtask) > 100 else ''}")
             if next_atomic_action != current_subtask:
                 print(f"🎯 Next Atomic Action: {next_atomic_action[:100]}{'...' if len(next_atomic_action) > 100 else ''}")
-            # print(f"🎯 Progress: Step {current_step_index + 1}/{total_subtasks}")
 
             # Show all subtasks overview
             if all_subtasks and total_subtasks > 0:
                 print(f"🎯 Task Overview ({total_subtasks} subtasks):")
-                for i, subtask in enumerate(all_subtasks, 1):
-                    status = "✅" if i <= current_step_index + 1 else "⏳"
-                    print(f"   {status} {i}. {subtask[:80]}{'...' if len(subtask) > 80 else ''}")
+                for i, subtask in enumerate(all_subtasks):
+                    if i < current_step_index:
+                        status = "✅"  # Completed
+                    elif i == current_step_index:
+                        status = "🔄"  # In progress
+                    else:
+                        status = "⏳"  # Pending
+                    print(f"   {status} {i+1}. {subtask[:80]}{'...' if len(subtask) > 80 else ''}")
 
             # Show selected intention
             print(f"✅ Selected Intention: {current_intention[:100]}{'...' if len(current_intention) > 100 else ''}")
@@ -500,6 +573,10 @@ class MultiAgentCoordinator:
                 "total_subtasks": 1,
                 "task_decomposed": False
             }
+            current_intention = planning_result["intention"]
+            self.intentions.append(current_intention)
+            current_subtask = planning_result["current_subtask"]
+            all_subtasks = planning_result["all_subtasks"]
 
             # Log planner agent error summary
             error_response = {
@@ -510,7 +587,6 @@ class MultiAgentCoordinator:
                 "reasoning": planning_result["reasoning"],
                 "task_decomposed": planning_result["task_decomposed"]
             }
-        #     self.log_agent_response("planner_agent", step_number, error_response)
 
         # 3. Actor Agent executes intention
         print("🎬 Actor Agent: Executing intention...")
@@ -543,10 +619,17 @@ class MultiAgentCoordinator:
                 executed_action = execution_result["action"]
                 self.actions.append(executed_action)
 
+                # Check if this is a STOP action
+                action_type = executed_action.get("action_type")
+                if action_type == ActionTypes.STOP:
+                    # Extract and store stop action data for future evaluation use
+                    self.stop_action_data = self._extract_stop_action_data(executed_action)
+                    print(f"🛑 STOP action detected. Answer: {self.stop_action_data.get('answer', 'N/A')[:100]}")
+
                 # Execute action in browser environment if available
                 if self.browser_env is not None:
                     try:
-                        print(f"🔍 Executing action in browser: {executed_action.get('action_type', 'UNKNOWN')}")
+                        print(f"🔍 Executing action in browser: {action_type}")
                         obs, reward, terminated, truncated, info = self.browser_env.step(executed_action)
 
                         # Ensure observation has text, image, and image_raw fields
@@ -570,10 +653,6 @@ class MultiAgentCoordinator:
 
                         # Determine if intention is fulfilled based on execution success
                         intention_fulfilled = reward == 1.0  # reward is 1.0 for success, 0.0 for failure
-
-                        # # Update trajectory with new state
-                        # state_info = {"observation": obs, "info": info}
-                        # self.trajectory.append(state_info)
 
                         print(f"✅ Browser execution successful - URL: {info.get('page', {}).url if 'page' in info else 'Unknown'}")
                     except Exception as e:
@@ -638,16 +717,13 @@ class MultiAgentCoordinator:
             llm_response = "No LLM response available due to exception"
 
             # Try to get LLM response from execution_result if available
-            if hasattr(execution_result, 'get') and execution_result.get("llm_response"):
-                llm_response = execution_result.get("llm_response")
-            elif hasattr(execution_result, 'get') and execution_result.get("response"):
-                llm_response = execution_result.get("response")
-
-            if hasattr(execution_result, 'get') and execution_result.get("error"):
-                error_details = execution_result.get("error")
-            elif hasattr(execution_result, 'get') and execution_result.get("exception_type"):
-                error_details = f"{execution_result.get('exception_type', 'Exception')}: {error_details}"
-
+            if 'execution_result' in dir() and hasattr(execution_result, 'get'):
+                if execution_result.get("llm_response"):
+                    llm_response = execution_result.get("llm_response")
+                elif execution_result.get("response"):
+                    llm_response = execution_result.get("response")
+                if execution_result.get("error"):
+                    error_details = execution_result.get("error")
 
             # Log actor agent error summary
             self.log_agent_response("actor_agent", step_number, {"error": error_details})
@@ -687,30 +763,36 @@ class MultiAgentCoordinator:
         # For multi-agent simulation, use simplified action descriptions to avoid dependency on complex observation_metadata
         action_type = executed_action.get("action_type", "UNKNOWN")
 
-        if action_type == "NONE":
+        if action_type == ActionTypes.NONE:
             action_str = f"Failed action: {executed_action.get('error', 'Unknown error')}"
-        elif action_type == "GOTO_URL":
+        elif action_type == ActionTypes.GOTO_URL:
             url = executed_action.get("url", "unknown")
             action_str = f"Navigate to {url}"
-        elif action_type == "CLICK":
+        elif action_type == ActionTypes.CLICK:
             element_id = executed_action.get("element_id", "unknown")
             action_str = f"Click on element {element_id}"
-        elif action_type == "TYPE":
+        elif action_type == ActionTypes.TYPE:
             element_id = executed_action.get("element_id", "unknown")
             text = executed_action.get("text", [""])[0] if executed_action.get("text") else ""
             action_str = f"Type '{text}' into element {element_id}"
-        elif action_type == "SCROLL":
+        elif action_type == ActionTypes.SCROLL:
             direction = executed_action.get("direction", "unknown")
             action_str = f"Scroll {direction}"
-        elif action_type == "HOVER":
+        elif action_type == ActionTypes.HOVER:
             element_id = executed_action.get("element_id", "unknown")
             action_str = f"Hover over element {element_id}"
+        elif action_type == ActionTypes.STOP:
+            action_str = f"Stop action"
         else:
             action_str = f"Action: {action_type}"
 
         self.meta_data["action_history"].append(action_str)
 
-        # 5. Reflector Agent reflects on execution
+        # 5. Reflector Agent reflects on execution with checklist approach
+        # Get current subtask from planning result
+        current_subtask = planning_result.get("current_subtask", current_intention)
+        all_subtasks = planning_result.get("all_subtasks", [])
+        
         reflection_result = self.reflector_agent.reflect_execution(
             trajectory=self.trajectory,
             intentions=self.intentions,
@@ -719,19 +801,88 @@ class MultiAgentCoordinator:
             latest_action=executed_action,
             current_observation=new_observation,
             context_summary=context_result,
+            current_subtask=current_subtask,
+            high_level_task=self.user_goal,
+            all_subtasks=all_subtasks,
         )
 
         self.reflections.append(reflection_result)
 
-        # Log reflector agent response summary
+        # Show checklist results
+        checklist = reflection_result.get("checklist", {})
+        print(f"📋 Reflector Checklist:")
+        print(f"   - Pattern Issue: {checklist.get('has_pattern_issue', False)}")
+        print(f"   - Execution Success: {checklist.get('execution_successful', True)}")
+        print(f"   - Subtask Completed: {checklist.get('subtask_completed', False)}")  # NEW
+        print(f"   - Subtask Needs Revision: {checklist.get('subtask_needs_revision', False)}")
+        print(f"   - Task Completed: {checklist.get('task_completed', False)}")
+
+        # Log reflector agent response summary with checklist format
         reflector_response = {
-            "effectiveness_result": reflection_result.get("effectiveness_analyzer", ""),
-            "pattern_result": reflection_result.get("pattern_detector", ""),
-            "triple_summary": reflection_result.get("triple_summary", "")
+            "has_pattern_issue": reflection_result.get("has_pattern_issue", False),
+            "execution_successful": reflection_result.get("execution_successful", True),
+            "subtask_completed": reflection_result.get("subtask_completed", False),  # NEW
+            "subtask_needs_revision": reflection_result.get("subtask_needs_revision", False),
+            "task_completed": reflection_result.get("task_completed", False),
+            "raw_response": checklist.get("raw_response", ""),
         }
         self.log_agent_response("reflector_agent", step_number, reflector_response)
 
-        # 6. Record workflow step
+        # 6. Handle subtask progression based on reflection results
+        
+        # Check for task completion with STOP action
+        task_completed = reflection_result.get("task_completed", False)
+        is_stop_action = executed_action.get("action_type") == ActionTypes.STOP
+        
+        if task_completed and is_stop_action:
+            print(f"🎉 Task completed with STOP action!")
+            return {
+                "should_terminate": True,
+                "termination_reason": "Task completed with STOP action",
+                "step_number": step_number,
+                "context_result": context_result,
+                "planning_result": planning_result,
+                "execution_result": execution_result,
+                "reflection_result": reflection_result,
+                "new_observation": new_observation,
+            }
+        
+        # Handle subtask completion - advance to next subtask
+        subtask_completed = reflection_result.get("subtask_completed", False)
+        if subtask_completed:
+            print(f"✅ Subtask completed! Advancing to next subtask...")
+            has_more_subtasks = self.planner_agent.mark_current_subtask_completed()
+            if not has_more_subtasks:
+                print(f"🎉 All subtasks completed!")
+                # Don't terminate yet - let the reflector determine if overall task is done
+        
+        # Handle subtask revision if needed
+        # NOTE: Subtask revision feature is temporarily disabled pending further refinement
+        # subtask_needs_revision = reflection_result.get("subtask_needs_revision", False)
+        # if subtask_needs_revision and not subtask_completed:
+        #     print(f"🔄 Subtask needs revision, generating revised subtask...")
+        #     revision_result = self.reflector_agent.generate_revised_subtask(
+        #         high_level_task=self.user_goal,
+        #         current_subtask=current_subtask,
+        #         all_subtasks=all_subtasks,
+        #         intentions=self.intentions,
+        #         current_observation=new_observation,
+        #     )
+        #     
+        #     if revision_result.get("success"):
+        #         revised_subtask = revision_result["revised_subtask"]
+        #         self.planner_agent.revise_current_subtask(revised_subtask)
+        #         print(f"🔄 Subtask revised to: {revised_subtask[:80]}...")
+        #         
+        #         # Log revision
+        #         revision_log = {
+        #             "original_subtask": current_subtask,
+        #             "revised_subtask": revised_subtask,
+        #             "reasoning": revision_result.get("reasoning", ""),
+        #         }
+        #         self.log_agent_response("subtask_revision", step_number, revision_log)
+
+        # 7. Record workflow step
         self.workflow_manager.record_execution_step(
             step_number=step_number,
             intention=current_intention,
@@ -750,6 +901,41 @@ class MultiAgentCoordinator:
             "new_observation": new_observation,
         }
 
+    def _extract_stop_action_data(self, action: Action) -> Dict[str, Any]:
+        """Extract data from a STOP action for future evaluation use.
+        
+        Args:
+            action: The STOP action containing answer data
+            
+        Returns:
+            Dictionary containing extracted stop action data
+        """
+        stop_data = {
+            "action_type": "STOP",
+            "answer": "",
+            "raw_action": action,
+        }
+        
+        # Try to extract the answer from the action
+        # The answer might be in different fields depending on action format
+        if "answer" in action:
+            stop_data["answer"] = action["answer"]
+        elif "text" in action:
+            text = action["text"]
+            if isinstance(text, list):
+                # Decode text from ID list if needed
+                try:
+                    from browser_env.actions import _id2key
+                    stop_data["answer"] = ''.join(_id2key[id_num] if 0 <= id_num < len(_id2key) else '?' for id_num in text)
+                except (ImportError, IndexError):
+                    stop_data["answer"] = ''.join(chr(id_num) if 32 <= id_num <= 126 else '?' for id_num in text)
+            else:
+                stop_data["answer"] = str(text)
+        elif "args" in action and action["args"]:
+            # Some formats store answer in args
+            stop_data["answer"] = str(action["args"][0]) if action["args"] else ""
+        
+        return stop_data
 
     def _get_current_context_summary(self) -> Dict[str, Any]:
         """Get current context summary without full update."""
@@ -769,6 +955,7 @@ class MultiAgentCoordinator:
         self.meta_data = {"action_history": ["None"]}
         self.user_goal = ""
         self.current_observation = None
+        self.stop_action_data = None  # Reset stop action data
         
         # Reset all sub-agents
         self.context_agent.reset()

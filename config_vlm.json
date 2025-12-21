@@ -16,7 +16,8 @@
     "headless": true,
     "slow_mo": 0,
     "viewport_width": 1280,
-    "viewport_height": 2048
+    "viewport_height": 2048,
+    "sleep_after_execution": 2.0
   },
   "observation": {
     "observation_type": "image_som",

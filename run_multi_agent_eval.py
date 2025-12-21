@@ -264,7 +264,7 @@ def test(args, test_file_list):
 
     # Get browser environment configuration
     browser_config = config.get('browser', {})
-    observation_type = browser_config.get('observation_type', 'accessibility_tree')
+    observation_type = config.get('observation', {}).get('observation_type', 'accessibility_tree')
     
     # Load captioning model if needed (similar to run.py)
     caption_image_fn = None
@@ -280,12 +280,12 @@ def test(args, test_file_list):
         )
         
     eval_caption_image_fn = None
-    if not eval_caption_image_fn:
-        eval_caption_image_fn = image_utils.get_captioning_fn(
-            args.eval_captioning_model_device,
-            torch.float16 if torch.cuda.is_available() and args.eval_captioning_model_device == "cuda" else torch.float32,
-            args.eval_captioning_model,
-        )
+    # if not eval_caption_image_fn:
+    #     eval_caption_image_fn = image_utils.get_captioning_fn(
+    #         args.eval_captioning_model_device,
+    #         torch.float16 if torch.cuda.is_available() and args.eval_captioning_model_device == "cuda" else torch.float32,
+    #         args.eval_captioning_model,
+    #     )
 
     # Build viewport_size from config
     viewport_size = {
@@ -298,7 +298,7 @@ def test(args, test_file_list):
         headless=browser_config.get('headless', False),  # Set to False for debugging
         slow_mo=browser_config.get('slow_mo', 100),
         observation_type=observation_type,
-        current_viewport_only=browser_config.get('current_viewport_only', True),
+        current_viewport_only=config.get('observation', {}).get('current_viewport_only', True),
         viewport_size=viewport_size,
         save_trace_enabled=browser_config.get('save_trace_enabled', True),
         sleep_after_execution=browser_config.get('sleep_after_execution', 0.5),

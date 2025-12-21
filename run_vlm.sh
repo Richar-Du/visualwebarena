@@ -33,7 +33,14 @@ export HF_ENDPOINT=https://hf-mirror.com
 
 # Run the multi-agent script
 python run_multi_agent.py \
-  --start_url "https://www.baidu.com" \
-  --intent "Tell me the sum of Yaoming and Liuxiang's age" \
-  --max_steps 3 \
+  --start_url "http://18.216.88.140:7770/" \
+  --intent "Show me the first item with round cookies in the \"ice cream sandwiches\" search results by descending relevance." \
+  --max_steps 10 \
   --config_file config_vlm.json
+
+
+# python run_multi_agent.py \
+#   --start_url "https://www.baidu.com/" \
+#   --intent "Please search for the term 'Large Model', navigate to its details page, extract the first sentence of the introduction, and send it to me." \
+#   --max_steps 10 \
+#   --config_file config_vlm.json

@@ -1,4 +1,8 @@
-"""Planner Agent for task decomposition and current state analysis."""
+"""Planner Agent for task decomposition and next action generation.
+
+This module provides planning capabilities with explicit subtask state tracking.
+The current subtask is tracked by SubtaskManager, not inferred by LLM.
+"""
 
 from typing import Any, Dict, List, Optional
 
@@ -7,25 +11,151 @@ from llms import lm_config
 
 from .planner.task_decomposer import TaskDecomposer
 from .planner.current_state_analyzer import CurrentStateAnalyzer
+from .planner.subtask_manager import SubtaskManager
 
 
 class PlannerAgent:
-    """Decomposes complex tasks and analyzes current state for execution planning.
+    """Decomposes complex tasks and generates next actions for execution.
 
-    Responsible for:
+    Responsibilities:
     1. Initial task decomposition into manageable subtasks
-    2. Current state analysis to determine progress and next atomic action
+    2. Generate next atomic action based on current subtask (from SubtaskManager)
+    
+    Note: The PlannerAgent no longer infers which subtask is current.
+    Instead, it receives the current subtask from SubtaskManager (managed by Coordinator).
     """
 
     def __init__(self, lm_config: lm_config.LMConfig) -> None:
         self.lm_config = lm_config
         self.task_decomposer = TaskDecomposer(lm_config)
         self.state_analyzer = CurrentStateAnalyzer(lm_config)
-
-        # Planning state
-        self.subtasks: List[str] = []
-        self.current_step_index: int = 0
+        
+        # SubtaskManager for explicit state tracking
+        self.subtask_manager = SubtaskManager()
+        
+        # Task decomposition flag
         self.task_decomposed: bool = False
+
+    def decompose_task(
+        self,
+        user_goal: str,
+        context_summary: Dict[str, Any],
+        current_observation: Optional[Observation] = None,
+    ) -> Dict[str, Any]:
+        """Decompose the task into subtasks (called once at the beginning).
+        
+        Args:
+            user_goal: Original user goal/task description
+            context_summary: Current context from Context Agent
+            current_observation: Current page observation
+            
+        Returns:
+            Dictionary containing decomposition results and subtask info
+        """
+        if self.task_decomposed:
+            # Already decomposed, return current state
+            return {
+                "subtasks": self.subtask_manager.get_all_subtasks(),
+                "current_subtask": self.subtask_manager.get_current_subtask(),
+                "current_index": self.subtask_manager.get_current_index(),
+                "total_subtasks": len(self.subtask_manager.get_all_subtasks()),
+                "task_decomposed": True,
+            }
+        
+        print("🎯 Planner Agent: Decomposing task...")
+        decomposition_result = self.task_decomposer.decompose_task(
+            user_goal=user_goal,
+            current_observation=current_observation or {"text": ""},
+            context_summary=context_summary,
+        )
+        
+        subtasks = decomposition_result.get("subtasks", [])
+        
+        # Initialize subtask manager
+        self.subtask_manager.initialize(subtasks)
+        self.task_decomposed = True
+        
+        print(f"🎯 Task decomposed into {len(subtasks)} subtasks:")
+        for i, subtask in enumerate(subtasks, 1):
+            print(f"   {i}. {subtask}")
+        
+        return {
+            "subtasks": subtasks,
+            "current_subtask": self.subtask_manager.get_current_subtask(),
+            "current_index": self.subtask_manager.get_current_index(),
+            "total_subtasks": len(subtasks),
+            "task_decomposed": True,
+            "reasoning": decomposition_result.get("reasoning", ""),
+        }
+
+    def generate_next_action(
+        self,
+        user_goal: str,
+        context_summary: Dict[str, Any],
+        current_observation: Optional[Observation] = None,
+    ) -> Dict[str, Any]:
+        """Generate the next atomic action based on current subtask.
+        
+        The current subtask is obtained from SubtaskManager (explicit tracking),
+        NOT inferred by LLM from observation.
+        
+        Args:
+            user_goal: Original user goal/task description
+            context_summary: Current context from Context Agent
+            current_observation: Current page observation
+            
+        Returns:
+            Dictionary containing next action and metadata
+        """
+        # Get current subtask from manager (explicit, not inferred)
+        current_subtask = self.subtask_manager.get_current_subtask()
+        
+        if not current_subtask:
+            # No more subtasks, task might be complete
+            return {
+                "intention": f"Complete the task: {user_goal}",
+                "next_atomic_action": f"Verify task completion for: {user_goal}",
+                "current_subtask": "",
+                "reasoning": "All subtasks completed, verifying final state",
+                "all_subtasks": self.subtask_manager.get_all_subtasks(),
+                "current_step_index": self.subtask_manager.get_current_index(),
+                "total_subtasks": len(self.subtask_manager.get_all_subtasks()),
+            }
+        
+        print(f"🎯 Planner Agent: Generating action for subtask: {current_subtask[:80]}...")
+        
+        # Analyze current state to determine next action
+        # Note: We now pass current_subtask explicitly, not asking LLM to infer it
+        state_analysis = self.state_analyzer.analyze_current_state(
+            user_goal=user_goal,
+            current_subtask=current_subtask,  # Explicit, not inferred
+            current_observation=current_observation or {"text": ""},
+            context_summary=context_summary,
+        )
+        
+        next_atomic_action = state_analysis.get("next_atomic_action", "")
+        reasoning = state_analysis.get("reasoning", "")
+        response = state_analysis.get("response", "")
+        
+        # Use atomic action as intention
+        if next_atomic_action:
+            selected_intention = next_atomic_action
+        else:
+            selected_intention = f"Continue working on: {current_subtask}"
+        
+        return {
+            "intention": selected_intention,
+            "next_atomic_action": next_atomic_action,
+            "current_subtask": current_subtask,
+            "reasoning": reasoning,
+            "all_subtasks": self.subtask_manager.get_all_subtasks(),
+            "current_step_index": self.subtask_manager.get_current_index(),
+            "total_subtasks": len(self.subtask_manager.get_all_subtasks()),
+            "task_decomposed": self.task_decomposed,
+            "state_analysis": state_analysis,
+            "user_goal": user_goal,
+            "response": response,
+        }
 
     def generate_intention(
         self,
@@ -35,127 +165,79 @@ class PlannerAgent:
         previous_intentions: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Generate the next execution intention based on current state.
+        
+        This is the main entry point called by Coordinator.
+        Handles both initial decomposition and subsequent action generation.
 
         Args:
             user_goal: Original user goal/task description
             context_summary: Current context from Context Agent
             current_observation: Current page observation
-            previous_intentions: List of intentions already completed (not used in new approach)
+            previous_intentions: List of intentions already completed (not used)
 
         Returns:
             Dictionary containing selected intention and metadata
         """
-
-        # Step 1: Perform task decomposition only on the first step
+        # Step 1: Perform task decomposition if not done
         if not self.task_decomposed:
-            print("🎯 Planner Agent: Decomposing task...")
-            decomposition_result = self.task_decomposer.decompose_task(
-                user_goal=user_goal,
-                current_observation=current_observation or {"text": ""},
-                context_summary=context_summary,
-            )
-            self.subtasks = decomposition_result.get("subtasks", [])
-            self.task_decomposed = True
+            self.decompose_task(user_goal, context_summary, current_observation)
+        
+        # Step 2: Generate next action based on current subtask
+        return self.generate_next_action(user_goal, context_summary, current_observation)
 
-            print(f"🎯 Task decomposed into {len(self.subtasks)} subtasks:")
-            for i, subtask in enumerate(self.subtasks, 1):
-                print(f"   {i}. {subtask}")
-        else:
-            print("🎯 Planner Agent: Analyzing current state...")
+    def get_subtask_manager(self) -> SubtaskManager:
+        """Get the subtask manager for external access.
+        
+        Returns:
+            SubtaskManager instance
+        """
+        return self.subtask_manager
 
-        # Step 2: Analyze current state to determine current subtask and next action
-        state_analysis = self.state_analyzer.analyze_current_state(
-            user_goal=user_goal,
-            subtasks=self.subtasks,
-            current_observation=current_observation or {"text": ""},
-            context_summary=context_summary,
-        )
+    def mark_current_subtask_completed(self) -> bool:
+        """Mark the current subtask as completed and advance.
+        
+        Called by Coordinator when Reflector confirms subtask completion.
+        
+        Returns:
+            True if advanced to next subtask, False if all completed
+        """
+        return self.subtask_manager.mark_current_completed()
 
-        # Extract key information from state analysis
-        current_subtask = state_analysis.get("current_subtask", "")
-        next_atomic_action = state_analysis.get("next_atomic_action", "")
-        reasoning = state_analysis.get("reasoning", "")
-        response = state_analysis.get("response", "")
+    def revise_current_subtask(self, revised_subtask: str) -> None:
+        """Revise the current subtask with a new version.
+        
+        Called by Coordinator when Reflector provides a revised subtask.
+        
+        Args:
+            revised_subtask: The revised subtask
+        """
+        self.subtask_manager.revise_current_subtask(revised_subtask)
 
-        # Create the intention for the Actor Agent
-        # Use the atomic action as the main intention for more precise execution
-        if next_atomic_action:
-            selected_intention = next_atomic_action
-        elif current_subtask:
-            selected_intention = current_subtask
-            # Update current_step_index to match the LLM-determined current subtask
-            # Try to find the matching subtask, handling cases where LLM adds numbering prefixes
-            matched_index = self._find_subtask_index(current_subtask)
-            if matched_index is not None:
-                self.current_step_index = matched_index
-        else:
-            # Fallback intention
-            if self.current_step_index < len(self.subtasks):
-                selected_intention = self.subtasks[self.current_step_index]
-            else:
-                print(f"🎯 Planner Agent: No subtasks available, continuing with user goal: {user_goal}")
-                selected_intention = f"Continue working on: {user_goal}"
+    def get_all_subtasks(self) -> List[str]:
+        """Get all subtasks.
+        
+        Returns:
+            List of all subtasks
+        """
+        return self.subtask_manager.get_all_subtasks()
 
-        # Build planning result with comprehensive information
-        planning_result = {
-            "intention": selected_intention,
-            "current_subtask": current_subtask,
-            "next_atomic_action": next_atomic_action,
-            "reasoning": reasoning,
-            "all_subtasks": self.subtasks,
-            "current_step_index": self.current_step_index,
-            "total_subtasks": len(self.subtasks),
-            "task_decomposed": self.task_decomposed,
-            "state_analysis": state_analysis,
-            "user_goal": user_goal,
-            "response": response
-        }
+    def get_current_subtask(self) -> str:
+        """Get current subtask.
+        
+        Returns:
+            Current subtask string
+        """
+        return self.subtask_manager.get_current_subtask()
 
-        return planning_result
+    def all_subtasks_completed(self) -> bool:
+        """Check if all subtasks are completed.
+        
+        Returns:
+            True if all subtasks completed
+        """
+        return self.subtask_manager.all_completed()
 
     def reset_planning_state(self) -> None:
         """Reset planning state for a new task."""
-        self.subtasks.clear()
-        self.current_step_index = 0
+        self.subtask_manager.reset()
         self.task_decomposed = False
-
-
-    def _find_subtask_index(self, current_subtask: str) -> Optional[int]:
-        """Find the index of a subtask, handling cases where LLM adds numbering prefixes.
-
-        Args:
-            current_subtask: The subtask text from LLM analysis (may include numbering)
-
-        Returns:
-            Index of the matching subtask, or None if not found
-        """
-        # First try exact match
-        if current_subtask in self.subtasks:
-            return self.subtasks.index(current_subtask)
-
-        # Try removing common numbering patterns (e.g., "1. ", "2. ", "(1) ", etc.)
-        import re
-
-        # Pattern to match numbering prefixes like "1. ", "2. ", "(1) ", "1) ", etc.
-        cleaned_subtask = re.sub(r'^\s*\d+\.?\s*', '', current_subtask).strip()
-        cleaned_subtask = re.sub(r'^\s*\(\d+\)\s*', '', cleaned_subtask).strip()
-
-        # Try exact match with cleaned version
-        if cleaned_subtask in self.subtasks:
-            return self.subtasks.index(cleaned_subtask)
-
-        # Try partial match (first N characters) for robustness
-        for i, subtask in enumerate(self.subtasks):
-            # Remove numbering from stored subtask too
-            cleaned_stored = re.sub(r'^\s*\d+\.?\s*', '', subtask).strip()
-            cleaned_stored = re.sub(r'^\s*\(\d+\)\s*', '', cleaned_stored).strip()
-
-            # Check if they match (case insensitive, ignore extra whitespace)
-            if cleaned_subtask.lower().strip() == cleaned_stored.lower().strip():
-                return i
-
-            # Fallback: check if the cleaned subtask is contained in the stored subtask
-            if len(cleaned_subtask) > 10 and cleaned_subtask.lower() in cleaned_stored.lower():
-                return i
-
-        return None

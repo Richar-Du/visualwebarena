@@ -90,9 +90,10 @@ class SummaryGenerator:
         else:
             obs_text = f"Page {idx}: None\n"
 
-        obs_image = obs.get("image")
+        # Prefer image_raw (pure screenshot) for Context Agent visual analysis
+        obs_image = obs.get("image_raw")
         if obs_image is None:
-            obs_image = obs.get("image_raw")
+            obs_image = obs.get("image")
 
         if isinstance(obs_image, np.ndarray):
             obs_image = Image.fromarray(obs_image)

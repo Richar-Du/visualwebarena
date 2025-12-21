@@ -1,17 +1,23 @@
-"""Task decomposition for planning Agent."""
+"""Task decomposition for planning Agent with multimodal support."""
 
 from typing import Any, Dict, List
+import numpy as np
 
-from browser_env.utils import Observation
+from PIL import Image
+
+from browser_env.utils import Observation, pil_to_b64
 from llms import lm_config, call_llm
 from ..prompts.prompt_loader import load_prompt_template
+from ..utils import is_multimodal_model
 
 
 class TaskDecomposer:
-    """Decomposes complex tasks into manageable subtasks."""
+    """Decomposes complex tasks into manageable subtasks with multimodal support."""
 
     def __init__(self, lm_config: lm_config.LMConfig) -> None:
         self.lm_config = lm_config
+        # Check if the model supports multimodal inputs
+        self.is_multimodal = is_multimodal_model(lm_config.model)
 
     def decompose_task(
         self,
@@ -23,7 +29,8 @@ class TaskDecomposer:
 
         Args:
             user_goal: Original user goal
-            current_observation: Current page observation
+            current_observation: Current page observation (includes image_raw for visual analysis)
+            context_summary: Context summary from Context Agent
 
         Returns:
             Dictionary containing task decomposition results
@@ -38,13 +45,90 @@ class TaskDecomposer:
             obs_data = current_observation
 
         current_page_text = obs_data.get("text", "") if isinstance(obs_data, dict) else str(obs_data)
+        
+        # Extract image for multimodal analysis
+        current_image = None
+        if isinstance(obs_data, dict):
+            current_image = obs_data.get("image_raw")
+            if current_image is None:
+                current_image = obs_data.get("image")
 
         memory = context_summary.get("memory_content", "")
-        # Build decomposition prompt using template
+
+        # Try multimodal approach if supported and image available
+        if self.is_multimodal and current_image is not None:
+            try:
+                decomposition = self._decompose_multimodal(
+                    user_goal=user_goal,
+                    current_image=current_image,
+                    memory=memory
+                )
+                return decomposition
+            except Exception as e:
+                print(f"Multimodal task decomposition failed: {e}, falling back to text-only")
+
+        # Fallback to text-only decomposition
+        return self._decompose_text_only(
+            user_goal=user_goal,
+            current_page_text=current_page_text,
+            memory=memory
+        )
+
+    def _decompose_multimodal(
+        self,
+        user_goal: str,
+        current_image: np.ndarray,
+        memory: str
+    ) -> Dict[str, Any]:
+        """Decompose task using multimodal (image + text) input."""
+        # Convert numpy array to PIL Image
+        if isinstance(current_image, np.ndarray):
+            pil_image = Image.fromarray(current_image)
+        else:
+            pil_image = current_image
+
+        # Load prompt template (multimodal version without current_page_text)
+        if memory != "":
+            prompt_text = load_prompt_template(
+                "planner_agent",
+                "task_decomposition_w_mem",
+                memory=memory,
+                user_goal=user_goal
+            )
+        else:
+            prompt_text = load_prompt_template(
+                "planner_agent",
+                "task_decomposition",
+                user_goal=user_goal
+            )
+
+        # Build multimodal message
+        content = [
+            {"type": "text", "text": "Current page screenshot:"},
+            {
+                "type": "image_url",
+                "image_url": {"url": pil_to_b64(pil_image)}
+            },
+            {"type": "text", "text": prompt_text}
+        ]
+
+        messages = [{"role": "user", "content": content}]
+
+        response = call_llm(self.lm_config, messages).strip()
+        return self._parse_decomposition_response(response)
+
+    def _decompose_text_only(
+        self,
+        user_goal: str,
+        current_page_text: str,
+        memory: str
+    ) -> Dict[str, Any]:
+        """Fallback text-only task decomposition."""
+        # Build decomposition prompt using text template
         if memory != "":
             prompt = load_prompt_template(
                 "planner_agent",
-                "task_decomposition_w_mem",
+                "task_decomposition_w_mem_text",
                 memory=memory,
                 user_goal=user_goal,
                 current_page_text=current_page_text
@@ -52,7 +136,7 @@ class TaskDecomposer:
         else:
             prompt = load_prompt_template(
                 "planner_agent",
-                "task_decomposition",
+                "task_decomposition_text",
                 user_goal=user_goal,
                 current_page_text=current_page_text
             )

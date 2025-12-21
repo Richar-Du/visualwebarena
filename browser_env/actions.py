@@ -1404,6 +1404,13 @@ def execute_action(
         case _:
             raise ValueError(f"Unknown action type: {action_type}")
 
+    # Wait for page to finish loading before taking screenshot
+    # This helps avoid capturing incomplete page states
+    try:
+        page.wait_for_load_state("load", timeout=5000)  # Wait up to 5 seconds for load event
+    except Exception:
+        pass  # Continue even if timeout - some pages don't fire load events properly
+    
     page.wait_for_timeout(int(sleep_after_execution * 1000))
     num_tabs_now = len(browser_ctx.pages)
     # if a new tab is opened by clicking, switch to the new tab

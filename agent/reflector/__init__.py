@@ -1,6 +1,6 @@
-"""Reflector Agent components for execution validation and reflection."""
+"""Reflector Agent components for checklist-based execution analysis."""
 
-from .effectiveness_analyzer import EffectivenessAnalyzer
-from .pattern_detector import PatternDetector
+from .checklist_analyzer import ChecklistAnalyzer
+from .subtask_reviser import SubtaskReviser
 
-__all__ = ["EffectivenessAnalyzer", "PatternDetector"]
+__all__ = ["ChecklistAnalyzer", "SubtaskReviser"]
