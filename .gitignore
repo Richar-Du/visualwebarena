@@ -151,4 +151,3 @@ logs/*
 *.json
 *.md
 result/*
-config_vlm.json

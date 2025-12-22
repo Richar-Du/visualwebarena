@@ -373,7 +373,7 @@ class MultiAgentCoordinator:
         # Ensure trajectory ends with an Action for compatibility with evaluators
         from browser_env.actions import create_stop_action, ActionTypes
         from beartype.door import is_bearable
-        from browser_env import Action, is_bearable
+        from browser_env import Action
         
         # Check if trajectory is empty or the last element is not an Action
         if not self.trajectory or not is_bearable(self.trajectory[-1], Action):

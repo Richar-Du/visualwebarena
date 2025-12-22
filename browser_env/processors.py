@@ -122,9 +122,12 @@ class TextObervationProcessor(ObservationProcessor):
 
         # calibrate the bounds, in some cases, the bounds are scaled somehow
         bounds = tree["documents"][0]["layout"]["bounds"]
-        b = bounds[0]
-        n = b[2] / self.viewport_size["width"]
-        bounds = [[x / n for x in bound] for bound in bounds]
+        if bounds:
+            b = bounds[0]
+            vw = self.viewport_size["width"] or 1
+            n = (b[2] or 0) / vw
+            if n and n != 0 and np.isfinite(n):
+                bounds = [[x / n for x in bound] for bound in bounds]
         tree["documents"][0]["layout"]["bounds"] = bounds
         # add union bound placeholder
         tree["documents"][0]["layout"]["unionBounds"] = [None for _ in bounds]
@@ -1186,9 +1189,12 @@ class ImageObservationProcessor(ObservationProcessor):
         client.detach()
         # calibrate the bounds, in some cases, the bounds are scaled somehow
         bounds = tree["documents"][0]["layout"]["bounds"]
-        b = bounds[0]
-        n = b[2] / self.viewport_size["width"]
-        bounds = [[x / n for x in bound] for bound in bounds]
+        if bounds:
+            b = bounds[0]
+            vw = self.viewport_size["width"] or 1
+            n = (b[2] or 0) / vw
+            if n and n != 0 and np.isfinite(n):
+                bounds = [[x / n for x in bound] for bound in bounds]
         tree["documents"][0]["layout"]["bounds"] = bounds
         # add union bound placeholder
         tree["documents"][0]["layout"]["unionBounds"] = [None for _ in bounds]

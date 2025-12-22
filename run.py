@@ -454,6 +454,7 @@ def test(
         except Exception as e:
             logger.info(f"[Unhandled Error] {repr(e)}]")
             import traceback
+            print(traceback.format_exc())
 
             # write to error file
             with open(Path(args.result_dir) / "error.txt", "a") as f:
