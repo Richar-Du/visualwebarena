@@ -708,6 +708,8 @@ class MultiAgentCoordinator:
             self.actions.append(executed_action)
             info = None
             new_observation = self.current_observation
+            import traceback
+            traceback.print_exc()
 
             print(f"🎬 Actor Error: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}")
 

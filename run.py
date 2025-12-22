@@ -395,6 +395,7 @@ def test(
                             intent,
                             images=images,
                             meta_data=meta_data,
+                            output_response=True
                         )
                     except ValueError as e:
                         # get the error message

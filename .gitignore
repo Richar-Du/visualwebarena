@@ -150,3 +150,5 @@ agents/prompts/jsons/*
 logs/*
 *.json
 *.md
+result/*
+config_vlm.json

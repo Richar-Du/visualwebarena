@@ -5,6 +5,7 @@ from typing import Any, Optional
 import tiktoken
 from beartype import beartype
 from PIL import Image
+import subprocess
 
 from agent.prompts import *
 from browser_env import Trajectory
@@ -177,6 +178,11 @@ class PromptAgent(Agent):
             response = f"{force_prefix}{response}"
             if output_response:
                 print(f'Agent: {response}', flush=True)
+                try:
+                    subprocess.run(["say", str(response)], check=False)
+                except Exception:
+                    import traceback
+                    traceback.print_exc()   
             n += 1
             try:
                 parsed_response = self.prompt_constructor.extract_action(

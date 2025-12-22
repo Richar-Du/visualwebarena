@@ -79,9 +79,11 @@ class ActorAgent(PromptAgent):
                     intent=intention_message,
                     meta_data=meta_data or {},
                     images=images,
-                    output_response=False,
+                    output_response=True,
                 )
             except Exception as next_action_error:
+                import traceback
+                traceback.print_exc()
                 print(f"🎬 Actor Error: {str(next_action_error)[:200]}")
                 print(f"🎬 Error Type: {type(next_action_error).__name__}")
                 raise next_action_error

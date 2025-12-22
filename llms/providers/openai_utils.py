@@ -44,6 +44,8 @@ def retry_with_exponential_backoff(  # type: ignore
 
             # Retry on specified errors
             except errors as e:
+                import traceback
+                traceback.print_exc()
                 # Increment retries
                 num_retries += 1
 
