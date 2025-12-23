@@ -13,24 +13,20 @@ from browser_env.utils import Observation
 from llms import lm_config
 
 from .reflector.checklist_analyzer import ChecklistAnalyzer
-from .reflector.subtask_reviser import SubtaskReviser
 
 
 class ReflectorAgent:
     """Unified reflector agent using checklist-based execution analysis.
 
-    Performs structured validation through 5 key checks:
+    Performs structured validation through key checks:
     1. Pattern Check: Detect repetitive or erroneous patterns in recent intents
     2. Execution Check: Verify if the latest action executed successfully
-    3. Subtask Completion Check: Determine if current subtask is completed (NEW)
-    4. Subtask Revision Check: Determine if current subtask needs revision
-    5. Task Completion Check: Check if the overall task is completed
+    3. Task Completion Check: Check if the overall task is completed
     """
 
     def __init__(self, lm_config: lm_config.LMConfig) -> None:
         self.lm_config = lm_config
         self.checklist_analyzer = ChecklistAnalyzer(lm_config)
-        self.subtask_reviser = SubtaskReviser(lm_config)
 
         # Reflection history
         self.reflection_history: List[Dict[str, Any]] = []
@@ -44,9 +40,7 @@ class ReflectorAgent:
         latest_action: Action,
         current_observation: Observation,
         context_summary: Dict[str, Any],
-        current_subtask: Optional[str] = None,
         high_level_task: Optional[str] = None,
-        all_subtasks: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Reflect on execution using structured checklist approach.
 
@@ -58,9 +52,7 @@ class ReflectorAgent:
             latest_action: The most recently executed action
             current_observation: The observation after action execution
             context_summary: Current context from Context Agent
-            current_subtask: Current subtask being worked on (from SubtaskManager)
             high_level_task: Original high-level task goal
-            all_subtasks: List of all subtasks (for revision)
 
         Returns:
             Dictionary containing checklist results and metadata
@@ -78,7 +70,6 @@ class ReflectorAgent:
                 image_before=image_before,
                 image_after=image_after,
                 latest_action=latest_action,
-                current_subtask=current_subtask or current_intention,
                 high_level_task=high_level_task or context_summary.get("summary", ""),
             )
 
@@ -87,8 +78,6 @@ class ReflectorAgent:
                 "checklist": checklist_result,
                 "has_pattern_issue": checklist_result.get("has_pattern_issue", False),
                 "execution_successful": checklist_result.get("execution_successful", True),
-                "subtask_completed": checklist_result.get("subtask_completed", False),  # NEW
-                "subtask_needs_revision": checklist_result.get("subtask_needs_revision", False),
                 "task_completed": checklist_result.get("task_completed", False),
                 "current_intention": current_intention,
                 "latest_action": latest_action,
@@ -106,14 +95,10 @@ class ReflectorAgent:
                 "checklist": {
                     "has_pattern_issue": False,
                     "execution_successful": False,
-                    "subtask_completed": False,  # NEW
-                    "subtask_needs_revision": False,
                     "task_completed": False,
                 },
                 "has_pattern_issue": False,
                 "execution_successful": False,
-                "subtask_completed": False,  # NEW
-                "subtask_needs_revision": False,
                 "task_completed": False,
                 "current_intention": current_intention,
                 "latest_action": latest_action,
@@ -124,47 +109,6 @@ class ReflectorAgent:
             self.reflection_history.append(error_reflection)
             return error_reflection
 
-    def generate_revised_subtask(
-        self,
-        high_level_task: str,
-        current_subtask: str,
-        all_subtasks: List[str],
-        intentions: List[str],
-        current_observation: Observation,
-    ) -> Dict[str, Any]:
-        """Generate a revised subtask when current subtask needs revision.
-
-        This method should be called when subtask_needs_revision=True.
-
-        Args:
-            high_level_task: Original high-level task goal
-            current_subtask: Current subtask that needs revision
-            all_subtasks: List of all subtasks
-            intentions: List of all intentions so far
-            current_observation: Current page observation
-
-        Returns:
-            Dictionary containing:
-                - revised_subtask: The new revised subtask string
-                - reasoning: Explanation for the revision
-                - success: Whether revision generation succeeded
-        """
-        print(f"🔄 Reflector Agent: Generating revised subtask...")
-        
-        result = self.subtask_reviser.generate_revised_subtask(
-            high_level_task=high_level_task,
-            current_subtask=current_subtask,
-            all_subtasks=all_subtasks,
-            recent_intents=intentions[-5:] if intentions else [],
-            current_observation=current_observation,
-        )
-
-        if result.get("success"):
-            print(f"🔄 Revised subtask: {result['revised_subtask'][:80]}...")
-        else:
-            print(f"⚠️  Subtask revision failed, keeping original: {current_subtask[:80]}...")
-
-        return result
 
     def _extract_before_after_images(
         self, trajectory: Trajectory, current_observation: Observation

@@ -265,14 +265,16 @@ def test(args, config_file):
 
     # Determine if model is multimodal and select appropriate prompt constructor
     from llms.tokenizers import Tokenizer
-    
+    from agent.utils import is_multimodal_model
+
     model_name = lm_cfg.model.lower()
-    is_multimodal_model = (
-        "gemini" in model_name or 
-        ("gpt-4" in model_name and "vision" in model_name) or
-        ("gpt-4o" in model_name)
-    )
+    is_multimodal_model = is_multimodal_model(lm_cfg.model)
     is_image_observation = observation_type in ["image", "image_som"]
+
+    # Validate that multimodal model is used when image_som observation type is selected
+    if observation_type == "image_som" and not is_multimodal_model:
+        raise ValueError(f"Model '{lm_cfg.model}' does not support multimodal inputs, but observation_type is set to 'image_som' which requires multimodal capabilities. "
+                        f"Please use a multimodal model from: {['gpt-4o', 'gpt-4-vision', 'gpt-4-turbo', 'gpt-5.1', 'gemini', 'claude-3', 'qwen']}")
     
     # Get instruction path from config or use default
     instruction_path = config.get('instruction_path')

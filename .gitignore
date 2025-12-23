@@ -150,3 +150,8 @@ agents/prompts/jsons/*
 logs/*
 *.json
 *.md
+*.jpg
+*.png
+*.html
+*.zip
+*.txt

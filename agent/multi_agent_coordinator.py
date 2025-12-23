@@ -54,7 +54,9 @@ class MultiAgentCoordinator:
                  existing_prompt_agent,
                  browser_env=None,
                  result_dir: str = "results",
-                 memory_config: Dict[str, Any]= {}) -> None:
+                 memory_config: Dict[str, Any]= {},
+                 clear_result_dir: bool = False,
+                 save_images: bool = True) -> None:
         self.lm_config = lm_config
 
         # Get action set tag from existing agent or use default
@@ -62,6 +64,10 @@ class MultiAgentCoordinator:
 
         self.enable_memory = memory_config.get("enable_memory", False)
         self.enable_memory_store = memory_config.get("enable_memory_store", False)
+
+        # Output configuration
+        self.clear_result_dir = clear_result_dir
+        self.save_images = save_images
 
         # Initialize individual agents with memory enabled if specified
         self.context_agent = ContextAgent(lm_config, memory_config)
@@ -110,6 +116,12 @@ class MultiAgentCoordinator:
     def _setup_logging(self) -> None:
         """Setup logging for agent responses."""
         try:
+            # Clear result directory if requested
+            if self.clear_result_dir and os.path.exists(self.result_dir):
+                import shutil
+                shutil.rmtree(self.result_dir)
+                print(f"Cleared result directory: {self.result_dir}")
+
             # Ensure result directory exists
             os.makedirs(self.result_dir, exist_ok=True)
 
@@ -164,30 +176,32 @@ class MultiAgentCoordinator:
             with open(self.observation_log_path, 'w', encoding='utf-8') as f:
                 json.dump(observations, f, indent=2, ensure_ascii=False)
 
-            # Save screenshot image if available (prefer image_raw for cleaner logs)
-            image_to_save = observation.get("image_raw")
-            if image_to_save is None:
-                image_to_save = observation.get("image")
-            if image_to_save is not None:
-                image_path = os.path.join(self.images_dir, f"step_{step_number:03d}.png")
-                # Convert numpy array to PIL Image and save
-                from PIL import Image
-                import numpy as np
+            # Save screenshot image if available and saving is enabled (prefer image_raw for cleaner logs)
+            if self.save_images:
+                image_to_save = observation.get("image_raw")
+                if image_to_save is None:
+                    image_to_save = observation.get("image")
+                if image_to_save is not None:
+                    image_path = os.path.join(self.images_dir, f"step_{step_number:03d}.png")
+                    # Convert numpy array to PIL Image and save
+                    from PIL import Image
+                    import numpy as np
 
-                if isinstance(image_to_save, np.ndarray):
-                    img = Image.fromarray(image_to_save)
-                    img.save(image_path)
+                    if isinstance(image_to_save, np.ndarray):
+                        img = Image.fromarray(image_to_save)
+                        img.save(image_path)
 
-            # Save SOM-annotated screenshot (image with bounding boxes and IDs)
-            image_som = observation.get("image")
-            if image_som is not None:
-                image_som_path = os.path.join(self.images_som_dir, f"step_{step_number:03d}.png")
-                from PIL import Image
-                import numpy as np
+            # Save SOM-annotated screenshot (image with bounding boxes and IDs) if saving is enabled
+            if self.save_images:
+                image_som = observation.get("image")
+                if image_som is not None:
+                    image_som_path = os.path.join(self.images_som_dir, f"step_{step_number:03d}.png")
+                    from PIL import Image
+                    import numpy as np
 
-                if isinstance(image_som, np.ndarray):
-                    img_som = Image.fromarray(image_som)
-                    img_som.save(image_som_path)
+                    if isinstance(image_som, np.ndarray):
+                        img_som = Image.fromarray(image_som)
+                        img_som.save(image_som_path)
 
         except Exception as e:
             print(f"Warning: Failed to log observation for step {step_number}: {e}")
@@ -299,32 +313,33 @@ class MultiAgentCoordinator:
         self.trajectory.append(initial_state_info)
         self.current_observation = initial_observation
 
-        # Save initial screenshot as step_000.png (prefer image_raw for cleaner logs)
-        image_to_save = initial_observation.get("image_raw")
-        if image_to_save is None:
-            image_to_save = initial_observation.get("image")
-        if image_to_save is not None:
-            initial_image_path = os.path.join(self.images_dir, "step_000.png")
-            # Convert numpy array to PIL Image and save
-            from PIL import Image
-            import numpy as np
+        # Save initial screenshot as step_000.png if saving is enabled (prefer image_raw for cleaner logs)
+        if self.save_images:
+            image_to_save = initial_observation.get("image_raw")
+            if image_to_save is None:
+                image_to_save = initial_observation.get("image")
+            if image_to_save is not None:
+                initial_image_path = os.path.join(self.images_dir, "step_000.png")
+                # Convert numpy array to PIL Image and save
+                from PIL import Image
+                import numpy as np
 
-            if isinstance(image_to_save, np.ndarray):
-                img = Image.fromarray(image_to_save)
-                img.save(initial_image_path)
-                print(f"📸 Saved initial screenshot as {initial_image_path}")
+                if isinstance(image_to_save, np.ndarray):
+                    img = Image.fromarray(image_to_save)
+                    img.save(initial_image_path)
+                    print(f"📸 Saved initial screenshot as {initial_image_path}")
 
-        # Save initial SOM-annotated screenshot
-        image_som = initial_observation.get("image")
-        if image_som is not None:
-            initial_som_path = os.path.join(self.images_som_dir, "step_000.png")
-            from PIL import Image
-            import numpy as np
+            # Save initial SOM-annotated screenshot
+            image_som = initial_observation.get("image")
+            if image_som is not None:
+                initial_som_path = os.path.join(self.images_som_dir, "step_000.png")
+                from PIL import Image
+                import numpy as np
 
-            if isinstance(image_som, np.ndarray):
-                img_som = Image.fromarray(image_som)
-                img_som.save(initial_som_path)
-                print(f"📸 Saved initial SOM screenshot as {initial_som_path}")
+                if isinstance(image_som, np.ndarray):
+                    img_som = Image.fromarray(image_som)
+                    img_som.save(initial_som_path)
+                    print(f"📸 Saved initial SOM screenshot as {initial_som_path}")
         
         # Track continuation decision for final summary
         continuation_decision = {"reason": "Execution started"}
@@ -373,7 +388,6 @@ class MultiAgentCoordinator:
         # Ensure trajectory ends with an Action for compatibility with evaluators
         from browser_env.actions import create_stop_action, ActionTypes
         from beartype.door import is_bearable
-        from browser_env import Action, is_bearable
         
         # Check if trajectory is empty or the last element is not an Action
         if not self.trajectory or not is_bearable(self.trajectory[-1], Action):
@@ -402,16 +416,16 @@ class MultiAgentCoordinator:
         if self.enable_memory_store:
             self.context_agent.generate_and_store_memory(task_completed)
 
-        final_summary = {
-            "total_steps_executed": len(self.actions),
-            "task_completed": task_completed,
-            "completion_percentage": "Completed" if task_completed else "In Progress",
-            "total_intentions": len(self.intentions),
-            "total_actions": len(self.actions),
-            "total_reflections": len(self.reflections),
-            "stop_action_data": self.stop_action_data,  # Include stop action data
-        }
-        self.log_agent_response("execution_summary", len(self.actions), final_summary)
+        # final_summary = {
+        #     "total_steps_executed": len(self.actions),
+        #     "task_completed": task_completed,
+        #     "completion_percentage": "Completed" if task_completed else "In Progress",
+        #     "total_intentions": len(self.intentions),
+        #     "total_actions": len(self.actions),
+        #     "total_reflections": len(self.reflections),
+        #     "stop_action_data": self.stop_action_data,  # Include stop action data
+        # }
+        # self.log_agent_response("execution_summary", len(self.actions), final_summary)
 
         # Return comprehensive execution result
         return {
@@ -520,43 +534,15 @@ class MultiAgentCoordinator:
             self.intentions.append(current_intention)
 
             # Show key planner information
-            current_subtask = planning_result.get("current_subtask", "")
-            next_atomic_action = planning_result.get("next_atomic_action", "")
             reasoning = planning_result.get("reasoning", "")
-            all_subtasks = planning_result.get("all_subtasks", [])
-            current_step_index = planning_result.get("current_step_index", 0)
-            total_subtasks = planning_result.get("total_subtasks", 0)
-
-            print(f"🎯 Current Subtask [{current_step_index + 1}/{total_subtasks}]: {current_subtask[:100]}{'...' if len(current_subtask) > 100 else ''}")
-            if next_atomic_action != current_subtask:
-                print(f"🎯 Next Atomic Action: {next_atomic_action[:100]}{'...' if len(next_atomic_action) > 100 else ''}")
-
-            # Show all subtasks overview
-            if all_subtasks and total_subtasks > 0:
-                print(f"🎯 Task Overview ({total_subtasks} subtasks):")
-                for i, subtask in enumerate(all_subtasks):
-                    if i < current_step_index:
-                        status = "✅"  # Completed
-                    elif i == current_step_index:
-                        status = "🔄"  # In progress
-                    else:
-                        status = "⏳"  # Pending
-                    print(f"   {status} {i+1}. {subtask[:80]}{'...' if len(subtask) > 80 else ''}")
 
             # Show selected intention
-            print(f"✅ Selected Intention: {current_intention[:100]}{'...' if len(current_intention) > 100 else ''}")
-
+            print(f"🎯 Selected Intention: {current_intention[:100]}{'...' if len(current_intention) > 100 else ''}")
 
             # Log planner agent response summary
             planner_response = {
                 "intention": current_intention,
-                "current_subtask": current_subtask,
-                "next_atomic_action": next_atomic_action,
                 "reasoning": reasoning,
-                "all_subtasks": all_subtasks,
-                "current_step_index": current_step_index,
-                "total_subtasks": total_subtasks,
-                "task_decomposed": planning_result.get("task_decomposed", False),
                 "response": planning_result.get("response", "")
             }
             self.log_agent_response("planner_agent", step_number, planner_response)
@@ -566,12 +552,12 @@ class MultiAgentCoordinator:
             planning_result = {
                 "intention": f"Continue working on: {self.user_goal}",
                 "current_subtask": f"Continue working on: {self.user_goal}",
-                "next_atomic_action": f"Continue working on: {self.user_goal}",
+                # "next_atomic_action": f"Continue working on: {self.user_goal}",
                 "reasoning": f"Fallback intention due to error: {str(e)}",
-                "all_subtasks": [f"Complete the task: {self.user_goal}"],
-                "current_step_index": 0,
-                "total_subtasks": 1,
-                "task_decomposed": False
+                # "all_subtasks": [f"Complete the task: {self.user_goal}"],
+                # "current_step_index": 0,
+                # "total_subtasks": 1,
+                # "task_decomposed": False
             }
             current_intention = planning_result["intention"]
             self.intentions.append(current_intention)
@@ -789,10 +775,6 @@ class MultiAgentCoordinator:
         self.meta_data["action_history"].append(action_str)
 
         # 5. Reflector Agent reflects on execution with checklist approach
-        # Get current subtask from planning result
-        current_subtask = planning_result.get("current_subtask", current_intention)
-        all_subtasks = planning_result.get("all_subtasks", [])
-        
         reflection_result = self.reflector_agent.reflect_execution(
             trajectory=self.trajectory,
             intentions=self.intentions,
@@ -801,9 +783,7 @@ class MultiAgentCoordinator:
             latest_action=executed_action,
             current_observation=new_observation,
             context_summary=context_result,
-            current_subtask=current_subtask,
             high_level_task=self.user_goal,
-            all_subtasks=all_subtasks,
         )
 
         self.reflections.append(reflection_result)
@@ -813,32 +793,31 @@ class MultiAgentCoordinator:
         print(f"📋 Reflector Checklist:")
         print(f"   - Pattern Issue: {checklist.get('has_pattern_issue', False)}")
         print(f"   - Execution Success: {checklist.get('execution_successful', True)}")
-        print(f"   - Subtask Completed: {checklist.get('subtask_completed', False)}")  # NEW
-        print(f"   - Subtask Needs Revision: {checklist.get('subtask_needs_revision', False)}")
         print(f"   - Task Completed: {checklist.get('task_completed', False)}")
 
         # Log reflector agent response summary with checklist format
         reflector_response = {
             "has_pattern_issue": reflection_result.get("has_pattern_issue", False),
             "execution_successful": reflection_result.get("execution_successful", True),
-            "subtask_completed": reflection_result.get("subtask_completed", False),  # NEW
-            "subtask_needs_revision": reflection_result.get("subtask_needs_revision", False),
             "task_completed": reflection_result.get("task_completed", False),
             "raw_response": checklist.get("raw_response", ""),
         }
         self.log_agent_response("reflector_agent", step_number, reflector_response)
 
-        # 6. Handle subtask progression based on reflection results
-        
-        # Check for task completion with STOP action
+        # 6. Handle task completion based on reflection results
+
+        # Check for task completion with STOP action (OR logic)
         task_completed = reflection_result.get("task_completed", False)
         is_stop_action = executed_action.get("action_type") == ActionTypes.STOP
-        
-        if task_completed and is_stop_action:
-            print(f"🎉 Task completed with STOP action!")
+
+        if task_completed or is_stop_action:
+            completion_reason = "Task completed by Reflector Agent" if task_completed and not is_stop_action else \
+                              "Task completed with STOP action" if is_stop_action and not task_completed else \
+                              "Task completed by both Reflector Agent and STOP action"
+            print(f"🎉 {completion_reason}!")
             return {
                 "should_terminate": True,
-                "termination_reason": "Task completed with STOP action",
+                "termination_reason": completion_reason,
                 "step_number": step_number,
                 "context_result": context_result,
                 "planning_result": planning_result,
@@ -846,41 +825,6 @@ class MultiAgentCoordinator:
                 "reflection_result": reflection_result,
                 "new_observation": new_observation,
             }
-        
-        # Handle subtask completion - advance to next subtask
-        subtask_completed = reflection_result.get("subtask_completed", False)
-        if subtask_completed:
-            print(f"✅ Subtask completed! Advancing to next subtask...")
-            has_more_subtasks = self.planner_agent.mark_current_subtask_completed()
-            if not has_more_subtasks:
-                print(f"🎉 All subtasks completed!")
-                # Don't terminate yet - let the reflector determine if overall task is done
-        
-        # Handle subtask revision if needed
-        # NOTE: Subtask revision feature is temporarily disabled pending further refinement
-        # subtask_needs_revision = reflection_result.get("subtask_needs_revision", False)
-        # if subtask_needs_revision and not subtask_completed:
-        #     print(f"🔄 Subtask needs revision, generating revised subtask...")
-        #     revision_result = self.reflector_agent.generate_revised_subtask(
-        #         high_level_task=self.user_goal,
-        #         current_subtask=current_subtask,
-        #         all_subtasks=all_subtasks,
-        #         intentions=self.intentions,
-        #         current_observation=new_observation,
-        #     )
-        #     
-        #     if revision_result.get("success"):
-        #         revised_subtask = revision_result["revised_subtask"]
-        #         self.planner_agent.revise_current_subtask(revised_subtask)
-        #         print(f"🔄 Subtask revised to: {revised_subtask[:80]}...")
-        #         
-        #         # Log revision
-        #         revision_log = {
-        #             "original_subtask": current_subtask,
-        #             "revised_subtask": revised_subtask,
-        #             "reasoning": revision_result.get("reasoning", ""),
-        #         }
-        #         self.log_agent_response("subtask_revision", step_number, revision_log)
 
         # 7. Record workflow step
         self.workflow_manager.record_execution_step(

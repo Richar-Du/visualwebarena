@@ -268,9 +268,10 @@ def test(args, test_file_list):
     
     # Load captioning model if needed (similar to run.py)
     caption_image_fn = None
+    # Only load captioning model for accessibility_tree_with_captioner
+    # For image_som, captioning is optional and multi-agent framework doesn't require it
     if observation_type in [
         "accessibility_tree_with_captioner",
-        "image_som",
     ]:
         device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -307,13 +308,16 @@ def test(args, test_file_list):
 
     # Determine if model is multimodal and select appropriate prompt constructor
     from llms.tokenizers import Tokenizer
-    
+    from agent.utils import is_multimodal_model
+
     model_name = lm_cfg.model.lower()
-    is_multimodal_model = (
-        "gemini" in model_name or 
-        ("gpt-4" in model_name and "vision" in model_name)
-    )
+    is_multimodal_model = is_multimodal_model(lm_cfg.model)
     is_image_observation = observation_type in ["image", "image_som"]
+
+    # Validate that multimodal model is used when image_som observation type is selected
+    if observation_type == "image_som" and not is_multimodal_model:
+        raise ValueError(f"Model '{lm_cfg.model}' does not support multimodal inputs, but observation_type is set to 'image_som' which requires multimodal capabilities. "
+                        f"Please use a multimodal model from: {['gpt-4o', 'gpt-4-vision', 'gpt-4-turbo', 'gpt-5.1', 'gemini', 'claude-3', 'qwen']}")
     
     # Get instruction path from config or use default
     instruction_path = config.get('instruction_path')
@@ -365,7 +369,9 @@ def test(args, test_file_list):
                                         base_agent,
                                         browser_env=env,
                                         result_dir=result_dir,
-                                        memory_config=config.get('memory', {}))
+                                        memory_config=config.get('memory', {}),
+                                        clear_result_dir=config.get('output', {}).get('clear_result_dir', False),
+                                        save_images=config.get('output', {}).get('save_images', True))
 
     # Execute workflow with initial observation from browser
     # Use start_url from config if available

@@ -101,69 +101,35 @@
       },
       "next_action_generation": {
         "name": "Next Action Generation (Multimodal)",
-        "task": "Generate next atomic action for a given subtask based on visual analysis",
-        "template": "You are analyzing the current web page screenshot to determine the next atomic action to complete a specific subtask.\n\nUSER GOAL: {user_goal}\n\nCURRENT SUBTASK (you must work on this): {current_subtask}\n\nRECENT CONTEXT: {context_summary}\n\nAnalyze the provided screenshot and determine what specific action should be taken next to make progress on the current subtask.\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about what you see in the screenshot and what action to take to complete the current subtask\n</think>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\", \"scroll down to see more content\")\n</next_action>",
-        "variables": ["user_goal", "current_subtask", "context_summary"],
+        "task": "Generate next atomic action for the current task based on visual analysis",
+        "template": "You are analyzing the current web page screenshot to determine the next atomic action to make progress on the task.\n\nUSER GOAL: {user_goal}\n\nRECENT CONTEXT: {context_summary}\n\nAnalyze the provided screenshot and determine what specific action should be taken next to make progress on the task.\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about what you see in the screenshot and what action to take to complete the task\n</think>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\", \"scroll down to see more content\", \"select the relevance option\")\n</next_action>",
+        "variables": ["user_goal", "context_summary"],
         "temperature": 0.6,
         "max_tokens": 2048,
         "multimodal": true
       },
       "next_action_generation_text": {
         "name": "Next Action Generation (Text Fallback)",
-        "task": "Generate next atomic action for a given subtask",
-        "template": "Determine the next atomic action to complete a specific subtask based on the current page state.\n\nUSER GOAL: {user_goal}\n\nCURRENT SUBTASK (you must work on this): {current_subtask}\n\nCURRENT PAGE STATE:\n{current_page_text}\n\nRECENT CONTEXT: {context_summary}\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about the current state and what action to take to complete the current subtask\n</think>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\", \"scroll down to see more content\")\n</next_action>",
-        "variables": ["user_goal", "current_subtask", "current_page_text", "context_summary"],
+        "task": "Generate next atomic action for the current task",
+        "template": "Determine the next atomic action to make progress on the task based on the current page state.\n\nUSER GOAL: {user_goal}\n\nCURRENT PAGE STATE:\n{current_page_text}\n\nRECENT CONTEXT: {context_summary}\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about the current state and what action to take to complete the task\n</think>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\", \"scroll down to see more content\")\n</next_action>",
+        "variables": ["user_goal", "current_page_text", "context_summary"],
         "temperature": 0.6,
         "max_tokens": 2048
       },
       "next_action_generation_w_mem": {
         "name": "Next Action Generation with Memory (Multimodal)",
-        "task": "Generate next atomic action for a given subtask with past experience",
-        "template": "You are analyzing the current web page screenshot to determine the next atomic action to complete a specific subtask.\n\nHere are some experiences and memories from previous related tasks for reference:\n{memory}\n\nUSER GOAL: {user_goal}\n\nCURRENT SUBTASK (you must work on this): {current_subtask}\n\nRECENT CONTEXT: {context_summary}\n\nAnalyze the provided screenshot and determine what specific action should be taken next to make progress on the current subtask. Apply any relevant insights from past experiences.\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about what you see in the screenshot and what action to take to complete the current subtask\n</think>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\", \"scroll down to see more content\")\n</next_action>",
-        "variables": ["memory", "user_goal", "current_subtask", "context_summary"],
+        "task": "Generate next atomic action for the current task with past experience",
+        "template": "You are analyzing the current web page screenshot to determine the next atomic action to make progress on the task.\n\nHere are some experiences and memories from previous related tasks for reference:\n{memory}\n\nUSER GOAL: {user_goal}\n\nRECENT CONTEXT: {context_summary}\n\nAnalyze the provided screenshot and determine what specific action should be taken next to make progress on the task. Apply any relevant insights from past experiences.\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about what you see in the screenshot and what action to take to complete the task\n</think>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\", \"scroll down to see more content\")\n</next_action>",
+        "variables": ["memory", "user_goal", "context_summary"],
         "temperature": 0.6,
         "max_tokens": 2048,
         "multimodal": true
       },
       "next_action_generation_w_mem_text": {
         "name": "Next Action Generation with Memory (Text Fallback)",
-        "task": "Generate next atomic action for a given subtask with past experience",
-        "template": "Determine the next atomic action to complete a specific subtask based on the current page state.\n\nHere are some experiences and memories from previous related tasks for reference:\n{memory}\n\nUSER GOAL: {user_goal}\n\nCURRENT SUBTASK (you must work on this): {current_subtask}\n\nCURRENT PAGE STATE:\n{current_page_text}\n\nRECENT CONTEXT: {context_summary}\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about the current state and what action to take to complete the current subtask\n</think>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\", \"scroll down to see more content\")\n</next_action>",
-        "variables": ["memory", "user_goal", "current_subtask", "current_page_text", "context_summary"],
-        "temperature": 0.6,
-        "max_tokens": 2048
-      },
-      "current_state_analysis": {
-        "name": "Current State Analysis (Multimodal) - DEPRECATED",
-        "task": "Analyze current visual state and determine next atomic action",
-        "template": "You are analyzing the current web page screenshot to determine which subtask is being worked on and what the next atomic action should be.\n\nUSER GOAL: {user_goal}\n\nTASK SUBTASKS:\n{subtasks}\n\nRECENT CONTEXT: {context_summary}\n\nAnalyze the provided screenshot and determine:\n1. Which subtask from the list is currently being worked on\n2. What specific action should be taken next based on what you see\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about what you see in the screenshot and what action to take\n</think>\n<current_subtask>\nThe exact subtask currently being worked on (must match one from the TASK SUBTASKS list)\n</current_subtask>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\")\n</next_action>",
-        "variables": ["user_goal", "subtasks", "context_summary"],
-        "temperature": 0.6,
-        "max_tokens": 2048,
-        "multimodal": true
-      },
-      "current_state_analysis_text": {
-        "name": "Current State Analysis (Text Fallback) - DEPRECATED",
-        "task": "Analyze current state and determine next atomic action",
-        "template": "Analyze the current execution state briefly to determine which subtask is currently being worked on and what the next atomic action should be.\n\nUSER GOAL: {user_goal}\n\nTASK SUBTASKS:\n{subtasks}\n\nCURRENT PAGE STATE:\n{current_page_text}\n\nRECENT CONTEXT: {context_summary}\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following format:\n\n<think>\nYour step-by-step reasoning about the current state and next action\n</think>\n<current_subtask>\nThe exact subtask currently being worked on (must match one from the TASK SUBTASKS list)\n</current_subtask>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\")\n</next_action>",
-        "variables": ["user_goal", "subtasks", "current_page_text", "context_summary"],
-        "temperature": 0.6,
-        "max_tokens": 2048
-      },
-      "current_state_analysis_w_mem": {
-        "name": "Current State Analysis with Memory (Multimodal) - DEPRECATED",
-        "task": "Analyze current visual state and determine next atomic action with past experience",
-        "template": "You are analyzing the current web page screenshot to determine which subtask is being worked on and what the next atomic action should be.\n\nHere are some experiences and memories from previous related tasks for reference:\n{memory}\n\nCURRENT USER GOAL: {user_goal}\n\nTASK SUBTASKS:\n{subtasks}\n\nRECENT CONTEXT: {context_summary}\n\nAnalyze the provided screenshot and determine:\n1. Which subtask from the list is currently being worked on\n2. What specific action should be taken next based on what you see\n3. Apply any relevant insights from past experiences\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about what you see in the screenshot and what action to take\n</think>\n<current_subtask>\nThe exact subtask currently being worked on (must match one from the TASK SUBTASKS list)\n</current_subtask>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\")\n</next_action>",
-        "variables": ["memory", "user_goal", "subtasks", "context_summary"],
-        "temperature": 0.6,
-        "max_tokens": 2048,
-        "multimodal": true
-      },
-      "current_state_analysis_w_mem_text": {
-        "name": "Current State Analysis with Memory (Text Fallback) - DEPRECATED",
-        "task": "Analyze current state and determine next atomic action",
-        "template": "Analyze the current execution state briefly to determine which subtask is currently being worked on and what the next atomic action should be.\n\nHere are some experiences and memories from previous related tasks for reference:\n{memory}\n\nCURRENT USER GOAL: {user_goal}\n\nTASK SUBTASKS:\n{subtasks}\n\nCURRENT PAGE STATE:\n{current_page_text}\n\nRECENT CONTEXT: {context_summary}\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about the current state and next action\n</think>\n<current_subtask>\nThe exact subtask currently being worked on (must match one from the TASK SUBTASKS list)\n</current_subtask>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\")\n</next_action>",
-        "variables": ["memory", "user_goal", "subtasks", "current_page_text", "context_summary"],
+        "task": "Generate next atomic action for the current task with past experience",
+        "template": "Determine the next atomic action to make progress on the task based on the current page state.\n\nHere are some experiences and memories from previous related tasks for reference:\n{memory}\n\nUSER GOAL: {user_goal}\n\nCURRENT PAGE STATE:\n{current_page_text}\n\nRECENT CONTEXT: {context_summary}\n\nINSTRUCTIONS:\nYou must respond with a structured analysis using the following exact XML format:\n\n<think>\nYour step-by-step reasoning about the current state and what action to take to complete the task\n</think>\n<next_action>\nSpecific atomic action to execute next (e.g., \"click the search button\", \"type 'hello' into the input field\", \"scroll down to see more content\")\n</next_action>",
+        "variables": ["memory", "user_goal", "current_page_text", "context_summary"],
         "temperature": 0.6,
         "max_tokens": 2048
       }
@@ -181,9 +147,9 @@
     "reflector_agent": {
       "reflection_checklist": {
         "name": "Unified Reflection Checklist (Multimodal)",
-        "task": "Perform structured checklist analysis of execution state with subtask completion check",
-        "template": "You are a reflection agent analyzing the execution of a web automation task. Compare the BEFORE and AFTER screenshots and evaluate the following checklist.\n\n=== EXECUTION CONTEXT ===\n\nHIGH-LEVEL TASK: {high_level_task}\n\nCURRENT SUBTASK: {current_subtask}\n\nRECENT ACTION INTENTS (last 5):\n{recent_intents}\n\nLATEST EXECUTED ACTION:\n- Type: {action_type}\n- Element: {element_id}\n- Text: {action_text}\n\n=== CHECKLIST EVALUATION ===\n\nPlease evaluate each of the following checks by analyzing the screenshots and context:\n\n1. PATTERN CHECK: Do the recent action intents show repetitive patterns, cycles, or stuck behavior?\n   - Look for: Same intent repeated multiple times, alternating between same intents, no progress patterns\n\n2. EXECUTION CHECK: Did the latest action execute successfully and produce visible changes?\n   - Compare BEFORE and AFTER screenshots for meaningful visual differences\n   - Check if the action produced the expected result\n\n3. SUBTASK COMPLETION CHECK: Has the CURRENT SUBTASK been successfully completed?\n   - Evaluate if the goal of the current subtask has been achieved based on the AFTER screenshot\n   - Consider if all necessary steps for this subtask have been performed\n   - This determines if we should advance to the next subtask\n\n4. SUBTASK REVISION CHECK: If the subtask is NOT completed, does it need to be revised or changed?\n   - Consider if the subtask is still achievable from current state\n   - Check if unexpected obstacles require replanning\n\n5. TASK COMPLETION CHECK: Has the overall HIGH-LEVEL TASK been completed?\n   - Verify if the main goal has been achieved based on current page state\n   - This is separate from subtask completion - check the entire task goal\n\n=== INSTRUCTIONS ===\n\nFirst, reason through each check step by step. Then provide your final answer as a JSON object with exactly 5 boolean values.\n\nBelow is an example of the formatted response:\n<think>\nYour step-by-step analysis of each check\n</think>\n\n<answer>\n{{\"has_pattern_issue\": true/false, \"execution_successful\": true/false, \"subtask_completed\": true/false, \"subtask_needs_revision\": true/false, \"task_completed\": true/false}}\n</answer>",
-        "variables": ["recent_intents", "action_type", "element_id", "action_text", "current_subtask", "high_level_task"],
+        "task": "Perform structured checklist analysis of execution state",
+        "template": "You are a reflection agent analyzing the execution of a web automation task. Compare the BEFORE and AFTER screenshots and evaluate the following checklist.\n\n=== EXECUTION CONTEXT ===\n\nHIGH-LEVEL TASK: {high_level_task}\n\nRECENT ACTION INTENTS (last 5):\n{recent_intents}\n\nLATEST EXECUTED ACTION:\n- Type: {action_type}\n- Element: {element_id}\n- Text: {action_text}\n\n=== CHECKLIST EVALUATION ===\n\nPlease evaluate each of the following checks by analyzing the screenshots and context:\n\n1. PATTERN CHECK: Do the recent action intents show repetitive patterns, cycles, or stuck behavior?\n   - Look for: Same intent repeated multiple times, alternating between same intents, no progress patterns\n\n2. EXECUTION CHECK: Did the latest action execute successfully and produce visible changes?\n   - Compare BEFORE and AFTER screenshots for meaningful visual differences\n   - Check if the action produced the expected result\n\n3. TASK COMPLETION CHECK: Has the overall HIGH-LEVEL TASK been completed?\n   - Verify if the main goal has been achieved based on current page state\n\n=== INSTRUCTIONS ===\n\nFirst, reason through each check step by step. Then provide your final answer as a JSON object with exactly 3 boolean values.\n\nBelow is an example of the formatted response:\n<think>\nYour step-by-step analysis of each check\n</think>\n\n<answer>\n{{\"has_pattern_issue\": true/false, \"execution_successful\": true/false, \"task_completed\": true/false}}\n</answer>",
+        "variables": ["recent_intents", "action_type", "element_id", "action_text", "high_level_task"],
         "temperature": 0.3,
         "max_tokens": 2048,
         "multimodal": true
@@ -191,27 +157,10 @@
       "reflection_checklist_text": {
         "name": "Unified Reflection Checklist (Text Fallback)",
         "task": "Perform structured checklist analysis of execution state without visual input",
-        "template": "You are a reflection agent analyzing the execution of a web automation task. Evaluate the following checklist based on the provided context.\n\n=== EXECUTION CONTEXT ===\n\nHIGH-LEVEL TASK: {high_level_task}\n\nCURRENT SUBTASK: {current_subtask}\n\nRECENT ACTION INTENTS (last 5):\n{recent_intents}\n\nLATEST EXECUTED ACTION:\n- Type: {action_type}\n- Element: {element_id}\n- Text: {action_text}\n\n=== CHECKLIST EVALUATION ===\n\nPlease evaluate each of the following checks:\n\n1. PATTERN CHECK: Do the recent action intents show repetitive patterns, cycles, or stuck behavior?\n   - Look for: Same intent repeated multiple times, alternating between same intents, no progress patterns\n\n2. EXECUTION CHECK: Based on the action type and context, did the latest action likely execute successfully?\n   - Consider if the action type is valid and appropriate\n   - Check if the action parameters make sense\n\n3. SUBTASK COMPLETION CHECK: Has the CURRENT SUBTASK been successfully completed?\n   - Evaluate if the goal of the current subtask has been achieved\n   - Consider if all necessary steps for this subtask have been performed\n   - This determines if we should advance to the next subtask\n\n4. SUBTASK REVISION CHECK: If the subtask is NOT completed, does it need to be revised or changed?\n   - Consider if the subtask is still achievable\n   - Check if the action sequence suggests obstacles\n\n5. TASK COMPLETION CHECK: Has the overall HIGH-LEVEL TASK been completed?\n   - Consider if recent actions indicate task completion\n\n=== INSTRUCTIONS ===\n\nFirst, reason through each check step by step. Then provide your final answer as a JSON object with exactly 5 boolean values.\n\n<think>\n[Your step-by-step analysis of each check]\n</think>\n\nYour final answer (JSON only, no additional text):\n{{\"has_pattern_issue\": true/false, \"execution_successful\": true/false, \"subtask_completed\": true/false, \"subtask_needs_revision\": true/false, \"task_completed\": true/false}}",
-        "variables": ["recent_intents", "action_type", "element_id", "action_text", "current_subtask", "high_level_task"],
+        "template": "You are a reflection agent analyzing the execution of a web automation task. Evaluate the following checklist based on the provided context.\n\n=== EXECUTION CONTEXT ===\n\nHIGH-LEVEL TASK: {high_level_task}\n\nRECENT ACTION INTENTS (last 5):\n{recent_intents}\n\nLATEST EXECUTED ACTION:\n- Type: {action_type}\n- Element: {element_id}\n- Text: {action_text}\n\n=== CHECKLIST EVALUATION ===\n\nPlease evaluate each of the following checks:\n\n1. PATTERN CHECK: Do the recent action intents show repetitive patterns, cycles, or stuck behavior?\n   - Look for: Same intent repeated multiple times, alternating between same intents, no progress patterns\n\n2. EXECUTION CHECK: Based on the action type and context, did the latest action likely execute successfully?\n   - Consider if the action type is valid and appropriate\n   - Check if the action parameters make sense\n\n3. TASK COMPLETION CHECK: Has the overall HIGH-LEVEL TASK been completed?\n   - Consider if recent actions indicate task completion\n\n=== INSTRUCTIONS ===\n\nFirst, reason through each check step by step. Then provide your final answer as a JSON object with exactly 3 boolean values.\n\n<think>\n[Your step-by-step analysis of each check]\n</think>\n\nYour final answer (JSON only, no additional text):\n{{\"has_pattern_issue\": true/false, \"execution_successful\": true/false, \"task_completed\": true/false}}",
+        "variables": ["recent_intents", "action_type", "element_id", "action_text", "high_level_task"],
         "temperature": 0.3,
         "max_tokens": 2048
-      },
-      "subtask_revision": {
-        "name": "Subtask Revision Generation (Multimodal)",
-        "task": "Generate a revised subtask when current subtask needs modification",
-        "template": "You are a planning agent that needs to revise a subtask that cannot be completed as originally planned.\n\n=== CONTEXT ===\n\nHIGH-LEVEL TASK: {high_level_task}\n\nORIGINAL SUBTASK (needs revision): {current_subtask}\n\nALL SUBTASKS:\n{all_subtasks}\n\nRECENT ACTION INTENTS:\n{recent_intents}\n\nREASON FOR REVISION: The current subtask could not be completed as planned. Based on the current page state, you need to provide a revised subtask that can make progress toward the high-level goal.\n\n=== INSTRUCTIONS ===\n\nAnalyze the current page screenshot and determine how to revise the subtask. The revised subtask should:\n1. Be achievable from the current page state\n2. Still contribute to the overall high-level task goal\n3. Be specific and actionable\n4. Follow the same format as the original subtasks\n\nRespond with a structured analysis:\n\n<think>\nYour reasoning about why the original subtask failed and what revision is needed\n</think>\n<revised_subtask>\nThe revised subtask (single line, same format as original subtasks)\n</revised_subtask>",
-        "variables": ["high_level_task", "current_subtask", "all_subtasks", "recent_intents"],
-        "temperature": 0.5,
-        "max_tokens": 1024,
-        "multimodal": true
-      },
-      "subtask_revision_text": {
-        "name": "Subtask Revision Generation (Text Fallback)",
-        "task": "Generate a revised subtask when current subtask needs modification",
-        "template": "You are a planning agent that needs to revise a subtask that cannot be completed as originally planned.\n\n=== CONTEXT ===\n\nHIGH-LEVEL TASK: {high_level_task}\n\nORIGINAL SUBTASK (needs revision): {current_subtask}\n\nALL SUBTASKS:\n{all_subtasks}\n\nCURRENT PAGE STATE:\n{current_page_text}\n\nRECENT ACTION INTENTS:\n{recent_intents}\n\nREASON FOR REVISION: The current subtask could not be completed as planned. Based on the current page state, you need to provide a revised subtask that can make progress toward the high-level goal.\n\n=== INSTRUCTIONS ===\n\nAnalyze the current page state and determine how to revise the subtask. The revised subtask should:\n1. Be achievable from the current page state\n2. Still contribute to the overall high-level task goal\n3. Be specific and actionable\n4. Follow the same format as the original subtasks\n\nRespond with a structured analysis:\n\n<think>\nYour reasoning about why the original subtask failed and what revision is needed\n</think>\n<revised_subtask>\nThe revised subtask (single line, same format as original subtasks)\n</revised_subtask>",
-        "variables": ["high_level_task", "current_subtask", "all_subtasks", "current_page_text", "recent_intents"],
-        "temperature": 0.5,
-        "max_tokens": 1024
       }
     }
   }

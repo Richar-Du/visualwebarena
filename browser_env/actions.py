@@ -197,6 +197,10 @@ def action2str(
                 action_str = f"stop [{action['answer']}]"
             case ActionTypes.UPLOAD:
                 action_str = f"upload [{action['text']}] to [{element_id}]"
+            case ActionTypes.SELECT_OPTION:
+                action_str = f"select_option [{element_id}] where [{element_id}]"
+            case ActionTypes.CHECK:
+                action_str = f"check [{element_id}] where [{element_id}]"
             case ActionTypes.NONE:
                 action_str = "none"
             case _:
@@ -1380,7 +1384,30 @@ def execute_action(
                 page = browser_ctx.new_page()
 
         case ActionTypes.SELECT_OPTION:
-            if action["pw_code"]:
+            if action.get("element_id"):
+                # Handle id-based select using coordinates
+                element_id = action["element_id"]
+                value = action.get("value", "")
+                element_center = obseration_processor.get_element_center(element_id)  # type: ignore[attr-defined]
+                # Get the element at the center position and call select_option
+                x_coord = int(element_center[0] * page.viewport_size["width"])
+                y_coord = int(element_center[1] * page.viewport_size["height"])
+                # Use JavaScript to find the select element and select option by text content
+                js_code = f"""
+                    const selectElement = document.elementFromPoint({x_coord}, {y_coord})?.closest('select');
+                    if (selectElement) {{
+                        // Find option by text content (more reliable than value matching)
+                        for (let i = 0; i < selectElement.options.length; i++) {{
+                            if (selectElement.options[i].textContent.trim() === '{value}') {{
+                                selectElement.selectedIndex = i;
+                                selectElement.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                break;
+                            }}
+                        }}
+                    }}
+                """
+                page.evaluate(js_code)
+            elif action["pw_code"]:
                 parsed_code = parse_playwright_code(action["pw_code"])
                 locator_code = parsed_code[:-1]
                 execute_playwright_select_option(locator_code, page)
@@ -1534,7 +1561,12 @@ async def aexecute_action(
                 page = await browser_ctx.new_page()
 
         case ActionTypes.SELECT_OPTION:
-            if action["pw_code"]:
+            if action.get("element_id"):
+                # Handle id-based select - not supported in async version yet
+                raise NotImplementedError(
+                    "ID-based select option is not supported in async execution"
+                )
+            elif action["pw_code"]:
                 parsed_code = parse_playwright_code(action["pw_code"])
                 locator_code = parsed_code[:-1]
                 await aexecute_playwright_select_option(locator_code, page)
@@ -1808,6 +1840,23 @@ def create_id_based_action(action_str: str) -> Action:
             return create_page_focus_action(page_number)
         case "close_tab":
             return create_page_close_action()
+        case "select":
+            match = re.search(r"select ?\[(\d+)\] ?\[(.+)\]", action_str)
+            if not match:
+                raise ActionParsingError(f"Invalid select action {action_str}")
+            element_id, value = match.group(1), match.group(2)
+            # Create a select_option action with element_id and value
+            # The actual playwright code will be empty, handled in execute_action
+            action = create_none_action()
+            action.update(
+                {
+                    "action_type": ActionTypes.SELECT_OPTION,
+                    "element_id": element_id,
+                    "value": value,
+                    "pw_code": "",
+                }
+            )
+            return action
         case "stop":  # stop answer
             match = re.search(r"stop ?\[(.+)\]", action_str)
             if not match:  # some tasks don't require an answer
