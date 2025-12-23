@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
+import traceback
+
 from browser_env import (
     ScriptBrowserEnv,
     Action,
@@ -112,6 +114,8 @@ def config():
     # Required arguments
     parser.add_argument("--config_file", type=str, required=True,
                        help="Path to JSON configuration file")
+    parser.add_argument("--task_list_file", type=str,
+                       help="Path to JSON task list (e.g., Online_Mind2Web.json)")
 
     # Commonly overridden arguments (for convenience)
     parser.add_argument("--start_url", type=str,
@@ -128,6 +132,10 @@ def config():
                        help="Enable verbose output (overrides config file)")
     parser.add_argument("--dry_run", action="store_true",
                        help="Show configuration without executing")
+    parser.add_argument("--start_id", type=int,
+                       help="the start id of the task list")
+    parser.add_argument("--end_id", type=int,
+                       help="the end id of the task list") #设置起始di和终止id
 
     return parser.parse_args()
 
@@ -159,6 +167,8 @@ def merge_config_with_args(config: Dict[str, Any], args) -> Dict[str, Any]:
                 if "output" not in merged:
                     merged["output"] = {}
                 merged["output"][key] = value
+            elif key == "task_list_file":
+                merged["task_list_file"] = value
             else:
                 # Direct override for any other arguments
                 merged[key] = value
@@ -186,7 +196,7 @@ def test(args, config_file):
     # Add result_dir to config for coordinator
     if 'output' not in config:
         config['output'] = {}
-    config['output']['result_dir'] = result_dir
+    config['output']['result_dir'] = result_dir  #因为result_dir是从命令行中读取进来的
 
     # Import the full multi-agent coordinator
     from agent.multi_agent_coordinator import MultiAgentCoordinator
@@ -270,7 +280,7 @@ def test(args, config_file):
     is_multimodal_model = (
         "gemini" in model_name or 
         ("gpt-4" in model_name and "vision" in model_name) or
-        ("gpt-4o" in model_name)
+        ("gpt-4o" in model_name) or (True)
     )
     is_image_observation = observation_type in ["image", "image_som"]
     
@@ -279,7 +289,7 @@ def test(args, config_file):
     if not instruction_path:
         # Select default instruction path based on observation type and model
         if is_multimodal_model and is_image_observation:
-            instruction_path = 'agent/prompts/jsons/p_som_cot_id_actree_0s.json'
+            instruction_path = 'agent/prompts/jsons/p_multimodal_cot_id_actree_3s.json'
         else:
             instruction_path = 'agent/prompts/jsons/p_cot_id_actree_3s.json'
 
@@ -318,7 +328,7 @@ def test(args, config_file):
         prompt_constructor=prompt_constructor,
         captioning_fn=caption_image_fn if observation_type == "accessibility_tree_with_captioner" else None,
     )
-    
+
     task_cfg = config.get('task', {})
     output_cfg = config.get('output', {})
     task_metadata_base = config.get('task_metadata') or {
@@ -329,51 +339,93 @@ def test(args, config_file):
         "reference_length": task_cfg.get('reference_length'),
         "level": task_cfg.get('level'),
     }
+    task_metadata_base = {k: v for k, v in task_metadata_base.items() if v is not None}  # 只保留有值的元数据
+    webjudge_root = output_cfg.get('webjudge_root')  # 可自定义 WebJudge 输出根目录
 
-    # Create multi-agent coordinator with browser environment
-    coordinator = MultiAgentCoordinator(lm_cfg,
-                                        base_agent,
-                                        browser_env=env,
-                                        result_dir=result_dir,
-                                        memory_config=config.get('memory', {}))
+    # 任务列表模式：从 task_list_file 读取并依次执行
+    task_list_path = config.get("task_list_file")
+    task_list = []
+    if task_list_path:
+        with open(task_list_path, "r", encoding="utf-8") as f:
+            task_list = json.load(f)
+        print(f"Loaded {len(task_list)} tasks from {task_list_path}")
 
-    # Load input images for the task, if any.
-    image_paths = config.get('task', {}).get('image', None)
-    images = []
-    if image_paths is not None:
-        if isinstance(image_paths, str):
-            image_paths = [image_paths]
-        for image_path in image_paths:
-            # Load image either from the web or from a local path.
-            if image_path.startswith("http"):
-                input_image = Image.open(requests.get(image_path, stream=True).raw)
-            else:
-                input_image = Image.open(image_path)
+    def run_single_task(single_task_meta: Dict[str, Any]):
+        # 将列表里的字段映射到运行所需的 task 配置与元数据
+        per_task_cfg = config.get('task', {}).copy() if isinstance(config.get('task', {}), dict) else {}
+        per_task_cfg['intent'] = single_task_meta.get('confirmed_task') or single_task_meta.get('task') or per_task_cfg.get('intent', 'Not specified')
+        per_task_cfg['start_url'] = single_task_meta.get('website') or per_task_cfg.get('start_url')
+        per_task_cfg['task_id'] = single_task_meta.get('task_id')
+        per_task_cfg['reference_length'] = single_task_meta.get('reference_length')
+        per_task_cfg['level'] = single_task_meta.get('level')
+        # 如未指定 max_steps，则尝试用 reference_length 作为上限
+        if per_task_cfg.get('max_steps') is None and single_task_meta.get('reference_length'):
+            per_task_cfg['max_steps'] = single_task_meta['reference_length']
 
-            images.append(input_image)
+        # 合成任务元数据
+        tm = task_metadata_base.copy()
+        tm.update({k: v for k, v in single_task_meta.items() if v is not None})
+        tm['task'] = per_task_cfg.get('intent')
 
-    # Execute workflow with initial observation from browser
-    # Use start_url from config if available
-    start_url = config.get('task', {}).get('start_url')
-    reset_options = {}
-    if start_url:
-        reset_options["start_url"] = start_url
+        # 创建新的协调器以清空内部轨迹
+        coordinator = MultiAgentCoordinator(lm_cfg,
+                                            base_agent,
+                                            browser_env=env,
+                                            result_dir=result_dir,
+                                            memory_config=config.get('memory', {}),
+                                            webjudge_result_root=webjudge_root)
 
-    initial_obs, initial_info = env.reset(options=reset_options if reset_options else None)
-    initial_observation = {"observation": initial_obs, "info": initial_info}
+        # 加载输入图片（若有）
+        image_paths = per_task_cfg.get('image')
+        images = []
+        if image_paths is not None:
+            if isinstance(image_paths, str):
+                image_paths = [image_paths]
+            for image_path in image_paths:
+                if image_path.startswith("http"):
+                    input_image = Image.open(requests.get(image_path, stream=True).raw)
+                else:
+                    input_image = Image.open(image_path)
+                images.append(input_image)
 
-    result = coordinator.execute_task(
-        user_goal=config.get('task', {}).get('intent', 'Not specified'),
-        start_observation=initial_observation,
-        max_steps=config.get('task', {}).get('max_steps', 3),
-        images=images if images else None,
-        task_metadata=task_metadata_base,
-    )
+        # 重置浏览器到指定起始页
+        start_url = per_task_cfg.get('start_url')
+        reset_options = {"start_url": start_url} if start_url else None
+        initial_obs, initial_info = env.reset(options=reset_options)
+        initial_observation = {"observation": initial_obs, "info": initial_info}
 
-    # Return the execution result
-    return result
+        # 执行任务
+        return coordinator.execute_task(
+            user_goal=per_task_cfg.get('intent', 'Not specified'),
+            start_observation=initial_observation,
+            max_steps=per_task_cfg.get('max_steps', 3),
+            images=images if images else None,
+            task_metadata=tm,  # 传递任务元信息供落盘
+            webjudge_root=webjudge_root  # 指定 WebJudge 输出根目录
+        )
+
+    # 若提供任务列表则顺序执行，否则执行单任务
+    if task_list:
+        results = []
+        for idx, t in enumerate(task_list):
+            if idx < args.start_id or idx >= args.end_id:
+                continue
+            print(f"Running task {idx+1}/{len(task_list)}: {t.get('task_id')}")
+            try:
+                results.append(run_single_task(t))
+            except Exception as e:
+                print(f"Error: {e}")
+                traceback.print_exc()
+                results.append(None)
+        return results
+    else:
+        return run_single_task(task_metadata_base)
 
 
 if __name__ == "__main__":
     args = config()
-    test(args, args.config_file)
+    try:
+        test(args, args.config_file)
+    except Exception as e:
+        print(f"Error: {e}")
+        traceback.print_exc()

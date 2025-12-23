@@ -1,0 +1,422 @@
+[
+    {
+        "task_id": "b320c68bffc1f3c7f2a8dc9d5478fb27",
+        "confirmed_task": "Find a walkthrough for the game \"The Legend of Zelda: Breath of the Wild\" on ign.",
+        "website": "https://www.ign.com/",
+        "reference_length": 6,
+        "level": "medium"
+    },
+    {
+        "task_id": "aa4b5cb7114fcc138ade82b4b9716d24",
+        "confirmed_task": "Find an editor's choice review with a score of 10 in the boardgame category on ign.",
+        "website": "https://www.ign.com/",
+        "reference_length": 8,
+        "level": "medium"
+    },
+    {
+        "task_id": "644a856c3897665e475e0dce50bf217d",
+        "confirmed_task": "Find a pair of wireless headphones on Amazon with active noise canceling for $100 or less and add them to the cart.",
+        "website": "https://www.amazon.com/",
+        "reference_length": 8,
+        "level": "medium"
+    },
+    {
+        "task_id": "561693d6eec7bbfba3fefe9e4b26decb",
+        "confirmed_task": "Browse Marriott Bonvoy credit cards on Marriott.",
+        "website": "https://www.marriott.com/",
+        "reference_length": 4,
+        "level": "easy"
+    },
+    {
+        "task_id": "34ccd15a8ea8fd3895af83f5ccf62369",
+        "confirmed_task": "Find out what to do when I lose an item on a bus on us.megabus.",
+        "website": "https://us.megabus.com/",
+        "reference_length": 3,
+        "level": "easy"
+    },
+    {
+        "task_id": "d71be72aa25c3eab8eea47a0e60382e2",
+        "confirmed_task": "Find technical specs for the latest Macbook Air on Apple.",
+        "website": "https://www.apple.com/",
+        "reference_length": 4,
+        "level": "easy"
+    },
+    {
+        "task_id": "bf3b311cc8dce16d3de844f4b5875dfd",
+        "confirmed_task": "Compare Apple watches and  learn more about the ultra version on apple.",
+        "website": "https://www.apple.com/",
+        "reference_length": 4,
+        "level": "easy"
+    },
+    {
+        "task_id": "816851ff92ff0219acf4364dcc2c4692_110325",
+        "confirmed_task": "Show me a list of blue baby boys' pajamas under $40, sorted by rating.",
+        "website": "https://www.jcpenney.com/",
+        "reference_length": 9,
+        "level": "medium"
+    },
+    {
+        "task_id": "20a460a8fe1971b84411c5b1e6ac4186",
+        "confirmed_task": "Show theatre events for Las Vegas and select one.",
+        "website": "https://www.stubhub.com/",
+        "reference_length": 3,
+        "level": "easy"
+    },
+    {
+        "task_id": "75146b7b67388b9244e0f21a1527c022",
+        "confirmed_task": "Find a male senior boxer near zip code 90028.",
+        "website": "https://www.adoptapet.com/",
+        "reference_length": 10,
+        "level": "medium"
+    },
+    {
+        "task_id": "eb323dc584156d0eb3a2b90bb8c4b791_110325",
+        "confirmed_task": "Find the cheapest 2 bed and 3+ bath apartment listing for rent in New York.",
+        "website": "https://www.compass.com/",
+        "reference_length": 15,
+        "level": "hard"
+    },
+    {
+        "task_id": "2dd41b1d0e8f389d0683f4a4627abfe6",
+        "confirmed_task": "Show houses for sale in Maryland with a maximum price of $60,000.",
+        "website": "https://www.landwatch.com/",
+        "reference_length": 7,
+        "level": "medium"
+    },
+    {
+        "task_id": "9c04b71bb8db6cf8e743b2290cbc8797",
+        "confirmed_task": "Find a UPS drop-off point near Miami Florida.",
+        "website": "https://www.ups.com/",
+        "reference_length": 6,
+        "level": "medium"
+    },
+    {
+        "task_id": "e7f6cca9a8875f98fee3b711ead3a444_110325",
+        "confirmed_task": "Find the posts liked by the user Taylor Swift on Tumblr.",
+        "website": "https://www.tumblr.com/",
+        "reference_length": 4,
+        "level": "easy"
+    },
+    {
+        "task_id": "2207bb4f21786690cfed20b37253fb8b",
+        "confirmed_task": "Check the current wind speed in Calgary, Alberta.",
+        "website": "https://www.theweathernetwork.com/",
+        "reference_length": 2,
+        "level": "easy"
+    },
+    {
+        "task_id": "7fff82864f21ddeccf4104a220892824",
+        "confirmed_task": "Find the lowest 27\"-32\" Samsung or LG computer monitors nearby which have 4k, IPS display.",
+        "website": "https://www.google.com/shopping?udm=28",
+        "reference_length": 10,
+        "level": "medium"
+    },
+    {
+        "task_id": "ce616721ce9aeda69890fbccb29677a6",
+        "confirmed_task": "Calculate the price to ship a large flat-rate box from 77449 to 77084 at the first available date and time.",
+        "website": "https://www.usps.com/",
+        "reference_length": 8,
+        "level": "medium"
+    },
+    {
+        "task_id": "c181f903ec1107b850032c17cad88393",
+        "confirmed_task": "Help me identify a pink round pill with 150 written on it.",
+        "website": "https://www.webmd.com/",
+        "reference_length": 7,
+        "level": "medium"
+    },
+    {
+        "task_id": "11abb668c751dd56bb41f296a8bb3a13",
+        "confirmed_task": "Find a store near zip 30010 that provides authorized Apple services for imacs and make this one my store.",
+        "website": "https://www.bestbuy.com/",
+        "reference_length": 10,
+        "level": "medium"
+    },
+    {
+        "task_id": "8103786e0e5976ebf961bd062d5f39cd",
+        "confirmed_task": "Find possible causes for the symptoms of chest pain which is sharp which is accompanied by anxiety.",
+        "website": "https://www.mayoclinic.org/",
+        "reference_length": 9,
+        "level": "medium"
+    },
+    {
+        "task_id": "987bad7c6d4726d64232a8a1c3386888",
+        "confirmed_task": "Find the seller info and seller's notes about the used car model 2011 BMW 135 with a max price of $30000.",
+        "website": "https://www.cars.com/",
+        "reference_length": 11,
+        "level": "hard"
+    },
+    {
+        "task_id": "fd787623166785d84093565bf945fd24",
+        "confirmed_task": "Check the interaction between Novolin N and Novolin R.",
+        "website": "https://www.drugs.com/",
+        "reference_length": 6,
+        "level": "medium"
+    },
+    {
+        "task_id": "c3307a70bb12ebf56cc9ec926b368f15",
+        "confirmed_task": "Find the interactions between Eulexin and hepatic dysfunction.",
+        "website": "https://www.drugs.com/",
+        "reference_length": 5,
+        "level": "easy"
+    },
+    {
+        "task_id": "5e4e89c9b6fdaee7a41aca5601b82e04",
+        "confirmed_task": "Identify a pill with a pink color and oval shape with 894 5 number on it.",
+        "website": "https://www.drugs.com/",
+        "reference_length": 8,
+        "level": "medium"
+    },
+    {
+        "task_id": "60cbbbd58eb9d28b053aef945f464228",
+        "confirmed_task": "Look up if the phone number 555555555 is a scam.",
+        "website": "https://www.bbb.org/",
+        "reference_length": 6,
+        "level": "medium"
+    },
+    {
+        "task_id": "1df24ec81137386d6476bcf343a79012",
+        "confirmed_task": "Search for NordicTrack with the lowest price.",
+        "website": "https://www.bestbuy.com/",
+        "reference_length": 6,
+        "level": "medium"
+    },
+    {
+        "task_id": "b1ce968a361e1088ce8d2ade6c2c9af0",
+        "confirmed_task": "Find young cats in Seattle and show off the newest additions.",
+        "website": "https://www.petfinder.com/",
+        "reference_length": 6,
+        "level": "medium"
+    },
+    {
+        "task_id": "4e3f6a538cc1f7321cfc50260db9545d",
+        "confirmed_task": "Look up the current temperature for zip code 10019.",
+        "website": "https://www.theweathernetwork.com/",
+        "reference_length": 2,
+        "level": "easy"
+    },
+    {
+        "task_id": "3ae28b3c440efe87dc700480b78ac608",
+        "confirmed_task": "Find the closest 5-star rated dentist to zip code 98011.",
+        "website": "https://www.healthgrades.com/",
+        "reference_length": 9,
+        "level": "medium"
+    },
+    {
+        "task_id": "690d7b4a285fdb1e9dabf973bf46ae4d",
+        "confirmed_task": "Browse iPhone X for sale that is in good condition, has a max price of 400, and searches in titles only.",
+        "website": "https://craigslist.org/",
+        "reference_length": 8,
+        "level": "medium"
+    },
+    {
+        "task_id": "73d08420706ae205a9c5be28b6d4e80f",
+        "confirmed_task": "Show me the rules and cancellation for Alley Spring.",
+        "website": "https://www.recreation.gov/",
+        "reference_length": 3,
+        "level": "easy"
+    },
+    {
+        "task_id": "27fa3ac20745d3d35e89fae157f63069",
+        "confirmed_task": "Browse the class schedule of graduate-level chemistry courses on Monday afternoons in the winter of 2023.",
+        "website": "https://www.stanford.edu/",
+        "reference_length": 11,
+        "level": "hard"
+    },
+    {
+        "task_id": "b4aa7315e31dfcdc52baf7771be260c9",
+        "confirmed_task": "Find the HGX H100 driver for Ubuntu 22.04 on AMD64 CPU.",
+        "website": "https://www.nvidia.com/",
+        "reference_length": 11,
+        "level": "hard"
+    },
+    {
+        "task_id": "9ed3827266b3b804f485859c3d00401e",
+        "confirmed_task": "If I'm 30, plan to retire at 65, and can save $300/month, with a 3% annual return, 13% current tax rate, and 24% retirement tax rate, show the comparison chart between Traditional and Roth IRA.",
+        "website": "https://www.chase.com/",
+        "reference_length": 12,
+        "level": "hard"
+    },
+    {
+        "task_id": "7c09c2c7c87cf6bb1138701eb54284ea",
+        "confirmed_task": "Find the comments for the most popular news in the past month under the Quantum Physics topic.",
+        "website": "https://phys.org/",
+        "reference_length": 8,
+        "level": "medium"
+    },
+    {
+        "task_id": "afcebfed28bea091d58f49ea6cb8194b",
+        "confirmed_task": "Find the most reviewed gluten-free multivitamins from CVS Health Brand under $15.",
+        "website": "https://www.cvs.com/",
+        "reference_length": 12,
+        "level": "hard"
+    },
+    {
+        "task_id": "33bd2cdcea4fcc42a09a8a1e4e5841c6_110325",
+        "confirmed_task": "Add a Box Combo to my bag with Diet Coke as the drink, and a Kids Combo with milk as the drink. Select the store closest to ZIP 10001 for pickup tomorrow at 12:00 PM.",
+        "website": "https://raisingcanes.com/",
+        "reference_length": 20,
+        "level": "hard"
+    },
+    {
+        "task_id": "47186fac8e7c7277af01144644eb4e0b",
+        "confirmed_task": "What is the ownership cost of the first car in the list \"top buys 2025\"?",
+        "website": "https://www.parkers.co.uk/",
+        "reference_length": 3,
+        "level": "easy"
+    },
+    {
+        "task_id": "fa9adb815b85d259f943d81874a052e5",
+        "confirmed_task": "Browse a user homepage that reposted the top song from the Top 50 Rock chart.",
+        "website": "https://soundcloud.com/",
+        "reference_length": 6,
+        "level": "medium"
+    },
+    {
+        "task_id": "b922508886ded315c9835457a6eb43ea",
+        "confirmed_task": "Browse tenured/tenure-track faculty positions in Computer Sciences & Technology in California.",
+        "website": "https://jobs.chronicle.com",
+        "reference_length": 6,
+        "level": "medium"
+    },
+    {
+        "task_id": "01abae9608f2d8752a83e08f136f720c",
+        "confirmed_task": "Show me the code for the company that is the top mover in the Cboe Europe Technology Sector Index (BEPTEC) as of the latest market close.",
+        "website": "https://www.cboe.com/",
+        "reference_length": 6,
+        "level": "medium"
+    },
+    {
+        "task_id": "da8f3823a827c7d3a492f383808e7912",
+        "confirmed_task": "Find and open the earliest press release.",
+        "website": "https://www.instructure.com/",
+        "reference_length": 6,
+        "level": "medium"
+    },
+    {
+        "task_id": "3dca7cbe7d086619d837ff9f5312cebc_110325",
+        "confirmed_task": "Can you show me products under the category path 'zara home' -> 'rug', with an additional filter for the color beige?",
+        "website": "https://zara.com/us",
+        "reference_length": 5,
+        "level": "easy"
+    },
+    {
+        "task_id": "c7c07ec10c668625a21ba64165d719bb",
+        "confirmed_task": "Find the total monthly price for four prepaid unlimited lines without autopay discounts.",
+        "website": "https://www.verizon.com/",
+        "reference_length": 8,
+        "level": "medium"
+    },
+    {
+        "task_id": "d9d8b7d84a3f8d057e368254fe8d65e2",
+        "confirmed_task": "Find the first commit submitted by NielsRogge to the official repository of the SAM2 model.",
+        "website": "https://github.com/",
+        "reference_length": 8,
+        "level": "medium"
+    },
+    {
+        "task_id": "157f4a79d55e8fa3fd55ba772ba40fbc",
+        "confirmed_task": "Find the most popular blue Lilo & Stitch toys.",
+        "website": "https://www.disney.com/",
+        "reference_length": 9,
+        "level": "medium"
+    },
+    {
+        "task_id": "62c8d970b3d13891f355911e5a8f4030",
+        "confirmed_task": "Find the top game listed in the Steam Deck's top-played list over the past year. Then, browse reviews for that game from players who have played over 100 hours and primarily use a Steam Deck.",
+        "website": "https://store.steampowered.com/",
+        "reference_length": 9,
+        "level": "medium"
+    },
+    {
+        "task_id": "47bfe8a7e0e4e7efc837287b407fbe90",
+        "confirmed_task": "Compare the first and second most popular smartphones manufactured by Xiaomi and show the comparison chart.",
+        "website": "https://versus.com/",
+        "reference_length": 10,
+        "level": "medium"
+    },
+    {
+        "task_id": "fe33894188d20d7469f37a9fd855e7ff_110325",
+        "confirmed_task": "Show me the most popular open-source software on SourceForge that runs on Linux and macOS, belongs to the category of “Agentic AI”, is licensed under MIT, and has a production/stable development status.",
+        "website": "https://sourceforge.net/",
+        "reference_length": 11,
+        "level": "hard"
+    },
+    {
+        "task_id": "71f8de1834599fba443f40dbbfab8edd",
+        "confirmed_task": "Search for papers related to reinforcement learning under the topics of computer science and mathematics on arxiv, with recent submission dates between September 2024 and January 2025.",
+        "website": "https://arxiv.org/",
+        "reference_length": 11,
+        "level": "hard"
+    },
+    {
+        "task_id": "c8c1ff115879b3afd14280beb1559b13",
+        "confirmed_task": "Find the latest Doraemon video in MP4 format that is over 20 minutes long and has a medium file size.",
+        "website": "https://www.4shared.com/",
+        "reference_length": 12,
+        "level": "hard"
+    },
+    {
+        "task_id": "d4fb78b7e74508cd3b33f01cf9200997",
+        "confirmed_task": "Show the figure comparing Occupational Fatalities Trends between Ohio and New York.",
+        "website": "https://www.americashealthrankings.org/",
+        "reference_length": 12,
+        "level": "hard"
+    },
+    {
+        "task_id": "c3a333968fc3c43d7f2688f425a0d633",
+        "confirmed_task": "Find the cheapest certified pre-owned Porsche 911 with a model year of 2019 or newer, within a 200-mile radius of ZIP code 97007.",
+        "website": "https://www.porsche.com/",
+        "reference_length": 15,
+        "level": "hard"
+    },
+    {
+        "task_id": "c6c9dc6079677cef594cec2fa6b16602",
+        "confirmed_task": "Add the cheapest black sofa with at least three seats, a leather finish, and at least four stars to my cart.",
+        "website": "https://www.ikea.com/",
+        "reference_length": 16,
+        "level": "hard"
+    },
+    {
+        "task_id": "c39d6c245f8243993e707d54d2f4acec",
+        "confirmed_task": "Browse the final skin in the list for the champion Ahri.",
+        "website": "https://www.leagueoflegends.com/",
+        "reference_length": 18,
+        "level": "hard"
+    },
+    {
+        "task_id": "ba01ea557b73f864c35ebba0dd6f3cb2",
+        "confirmed_task": "Find the top-rated hotel in Manhattan, NY, suitable for 4 guests, and identify the fastest public transportation option from the hotel to LGA airport.",
+        "website": "https://www.google.com/maps/",
+        "reference_length": 14,
+        "level": "hard"
+    },
+    {
+        "task_id": "a96fca87a17d792644e736d1d10d3cbe",
+        "confirmed_task": "View the pricing plan for 'Business'. Specifically, we have 100 users. We need a 1PB storage quota and a 50 TB transfer quota.",
+        "website": "https://mega.io/",
+        "reference_length": 5,
+        "level": "easy"
+    },
+    {
+        "task_id": "d1970c16271496cbbe166ecbecc0a1d8",
+        "confirmed_task": "I'm 25 and located in Texas. Shop for 2020 made dry red wine made in United States priced between 15-20 dollars and add 5 bottles to the cart.",
+        "website": "https://macyswineshop.com/",
+        "reference_length": 13,
+        "level": "hard"
+    },
+    {
+        "task_id": "28e7574e7bd6d14f36d2988a5ef2bd23",
+        "confirmed_task": "Get a part-time job within 5 miles of Moscow, Idaho in the accommodation and food services industry, as a chef, and show jobs for corporate only.",
+        "website": "https://ohiomeansjobs.ohio.gov/",
+        "reference_length": 12,
+        "level": "hard"
+    },
+    {
+        "task_id": "1223b07536a87e0170ff87cbbebd1d3c",
+        "confirmed_task": "Complete a multiplication quiz on https://www.coolmath4kids.com/, covering multiplication facts for 11-12. The quiz should consist of 10 questions, with unlimited time allowed for each. The goal is to achieve a perfect score of 10 out of 10.",
+        "website": "https://www.coolmath4kids.com/",
+        "reference_length": 24,
+        "level": "hard"
+    }
+]

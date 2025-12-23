@@ -7,7 +7,7 @@ with explicit subtask state management and task completion handling.
 from typing import Any, Dict, List, Optional, Union
 import json
 import os
-import copy
+import traceback
 from datetime import datetime
 
 from PIL import Image
@@ -28,6 +28,7 @@ except ImportError:
 # Type aliases for better type hints
 ObservationTypeAlias = ObservationType
 
+import copy
 
 from .context_agent import ContextAgent
 from .planner_agent import PlannerAgent
@@ -54,7 +55,8 @@ class MultiAgentCoordinator:
                  existing_prompt_agent,
                  browser_env=None,
                  result_dir: str = "results",
-                 memory_config: Dict[str, Any]= {}) -> None:
+                 memory_config: Dict[str, Any]= {},
+                 webjudge_result_root: Optional[str] = None) -> None:
         self.lm_config = lm_config
 
         # Get action set tag from existing agent or use default
@@ -83,6 +85,8 @@ class MultiAgentCoordinator:
 
         # Result directory and logging setup
         self.result_dir = result_dir
+        # WebJudge 结果根目录（与现有结果分开保存）
+        self.webjudge_result_root = webjudge_result_root or os.path.join(self.result_dir, "webjudge_results")  # WebJudge 输出根目录
         self.log_file_path = os.path.join(result_dir, "agent_responses.log")
         self.observation_log_path = os.path.join(result_dir, "observations.json")
         self.images_dir = os.path.join(result_dir, "images")
@@ -94,6 +98,13 @@ class MultiAgentCoordinator:
         self.intentions: List[str] = []
         self.actions: List[Action] = []
         self.reflections: List[Dict[str, Any]] = []
+        self.webjudge_action_history: List[str] = []  # 存动作文本历史
+        self.webjudge_thoughts: List[str] = []  # 存每步意图/思考
+        self.task_metadata: Dict[str, Any] = {}  # 任务元信息缓存
+        self.task_output_dir: Optional[str] = None  # 当前任务输出目录
+        self.trajectory_dir: Optional[str] = None  # 截图存放目录
+        self.result_json_path: Optional[str] = None  # result.json 路径
+        self.current_task_id: str = ""  # 当前任务 ID
 
         # Meta data for action history tracking (required by DirectPromptConstructor)
         # Initialize with "None" as the first action, matching run.py implementation
@@ -193,12 +204,129 @@ class MultiAgentCoordinator:
             print(f"Warning: Failed to log observation for step {step_number}: {e}")
 
 
+    def _prepare_webjudge_output(self, task_metadata: Optional[Dict[str, Any]], webjudge_root: Optional[str]) -> None:
+        """Create per-task directories for WebJudge-compatible outputs."""
+        self.task_metadata = task_metadata or {}  # 记录任务元信息
+        self.current_task_id = self.task_metadata.get("task_id") or datetime.now().strftime("%Y%m%d_%H%M%S")  # 若无 task_id 用时间戳代替
+        base_root = webjudge_root or self.webjudge_result_root  # 选择输出根目录
+        self.task_output_dir = os.path.join(base_root, self.current_task_id)  # 当前任务输出目录
+        self.trajectory_dir = os.path.join(self.task_output_dir, "trajectory")  # 截图子目录
+        os.makedirs(self.trajectory_dir, exist_ok=True)
+        self.result_json_path = os.path.join(self.task_output_dir, "result.json")  # 结果文件路径
+        self.webjudge_action_history = []  # 重置动作记录
+        self.webjudge_thoughts = []  # 重置思考记录
+
+    def _capture_and_save_screenshot(self, step_number: int) -> Optional[str]:
+        """Capture full-page screenshot directly from Playwright page (no SOM)."""
+        if self.browser_env is None or not hasattr(self.browser_env, "page"):
+            return None  # 无浏览器实例时跳过
+        if not self.trajectory_dir:
+            return None  # 未初始化目录时跳过
+        screenshot_path = os.path.join(self.trajectory_dir, f"step_{step_number:03d}.png")
+        try:
+            self.browser_env.page.screenshot(path=screenshot_path, full_page=True)  # 直接截全页
+            return screenshot_path
+        except Exception as e:
+            print(f"Warning: Failed to capture screenshot for step {step_number}: {e}")
+            return None
+
+    def _format_action_for_webjudge(self, executed_action: Action, info: Optional[Dict[str, Any]]) -> str:
+        """Format action string for WebJudge action_history."""
+        action_type = executed_action.get("action_type", "UNKNOWN")
+        description = executed_action.get("raw_prediction") or action_type  # 默认用原始预测
+        observation_metadata = None
+        if info and isinstance(info, dict):
+            observation_metadata = info.get("observation_metadata")
+
+        # 将每步的 observation_metadata 单独存文件，便于按步排查
+        # step_meta_path = os.path.join(
+        #     self.trajectory_dir,
+        #     f"observation_metadata_step_{self.workflow_manager.current_step:03d}.json"
+        # )
+        # step_meta_path_action = os.path.join(
+        #     self.trajectory_dir,
+        #     f"observation_metadata_step_{self.workflow_manager.current_step:03d}_action.txt"
+        # )
+        # try:
+        #     with open(step_meta_path, "w", encoding="utf-8") as f:
+        #         json.dump(observation_metadata, f, ensure_ascii=False, indent=2)
+        #     with open(step_meta_path_action, "w", encoding="utf-8") as f:
+        #         f.write(str(executed_action.get("element_id")))
+        # except Exception as e:
+        #     print(f"Warning: Failed to save observation metadata for step {self.workflow_manager.current_step}: {e}")
+
+        if observation_metadata:
+            try:
+                description = get_action_description(
+                    executed_action,
+                    observation_metadata,
+                    getattr(self.actor_agent, "action_set_tag", "id_accessibility_tree"),
+                    getattr(self.actor_agent, "prompt_constructor", None),
+                )
+            except Exception:
+                pass
+        return f"{description} -> {action_type}"
+
+    def _format_action_for_webjudge_html(self, executed_action: Action, info: Optional[Dict[str, Any]]) -> str:
+        """备用：尽量还原原始 HTML 的动作描述（如 <a href="...">文本</a> -> CLICK）。
+        如需启用，将调用处的 _format_action_for_webjudge 替换为本函数即可。
+        """
+        action_type = executed_action.get("action_type", "UNKNOWN")
+        observation_metadata = None
+        if info and isinstance(info, dict):
+            observation_metadata = info.get("observation_metadata")
+
+        node = None
+        if observation_metadata and "text" in observation_metadata:
+            text_meta = observation_metadata["text"]
+            node = text_meta.get("obs_nodes_info", {}).get(executed_action.get("element_id"))
+
+        if node:
+            tag = node.get("tag") or node.get("nodeName") or "div"
+            attrs = []
+            for k in ["id", "class", "href", "url", "name", "aria-label", "placeholder", "type", "value"]:
+                v = node.get(k) or node.get(k.replace("-", "_"))
+                if v:
+                    attrs.append(f'{k}="{v}"')
+            role = node.get("role")
+            if role:
+                attrs.append(f'role="{role}"')
+            attr_str = (" " + " ".join(attrs)) if attrs else ""
+            inner = node.get("text") or node.get("alt") or node.get("name") or node.get("value") or tag
+            return f"<{tag}{attr_str}>{inner}</{tag}> -> {action_type}"
+
+        # SOM 或缺元数据时退回简单描述
+        elem_id = executed_action.get("element_id", "unknown")
+        return f"<element id=\"{elem_id}\"> -> {action_type}"
+
+    def _save_webjudge_result(self, final_result_response: str) -> None:
+        """Persist WebJudge style result.json."""
+        if not self.result_json_path:
+            return
+        payload = {
+            "task_id": self.task_metadata.get("task_id", self.current_task_id),
+            "task": self.task_metadata.get("task") or self.user_goal,
+            "final_result_response": final_result_response,  # 最终回答
+            "action_history": self.webjudge_action_history,  # 动作列表
+            "thoughts": self.webjudge_thoughts,  # 思考列表
+        }
+        for key in ["website", "reference_length", "level", "confirmed_task"]:
+            if key in self.task_metadata:
+                payload[key] = self.task_metadata[key]  # 可选元数据透传
+
+        os.makedirs(os.path.dirname(self.result_json_path), exist_ok=True)
+        with open(self.result_json_path, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
     def execute_task(
         self,
         user_goal: str,
         start_observation: Optional["ObservationTypeAlias"] = None,
         max_steps: int = 30,
         images: Optional[List[Image.Image]] = None,
+        task_metadata: Optional[Dict[str, Any]] = None,
+        webjudge_root: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Execute a complete task using coordinated multi-agent approach.
 
@@ -219,6 +347,13 @@ class MultiAgentCoordinator:
         self.user_goal = user_goal
         self.max_steps = max_steps
         self.current_observation = start_observation
+
+        # Prepare WebJudge output directories
+        self._prepare_webjudge_output(task_metadata, webjudge_root)  # 为本任务创建输出目录
+
+        # Reset meta_data for new task execution (required by DirectPromptConstructor)
+        # Initialize with "None" as the first action, matching run.py implementation
+        self.meta_data = {"action_history": ["None"]}
 
         # Initialize workflow and monitoring
         workflow_init = self.workflow_manager.initialize_workflow(max_steps)
@@ -243,21 +378,52 @@ class MultiAgentCoordinator:
 
         # Initialize trajectory with initial state
         # This is required because DirectPromptConstructor expects trajectory[-1] to exist
-        # Note: trajectory is always empty here since we call reset() at the start
-        # Handle different formats of start_observation
-        if start_observation is None:
-            # No observation provided, create empty state
-            initial_observation = {"text": "", "image": None, "image_raw": None}
-            initial_info = {"page": type('SimplePage', (), {'url': ''})(), "observation_metadata": {}}
-        elif isinstance(start_observation, dict) and "observation" in start_observation and "info" in start_observation:
-            # start_observation is already in StateInfo format: {"observation": obs, "info": info}
-            initial_observation = start_observation["observation"]
-            # Deep copy observation_metadata to avoid reference sharing issues
-            source_info = start_observation["info"]
-            initial_info = {
-                "page": source_info.get("page"),
-                "fail_error": source_info.get("fail_error", ""),
-                "observation_metadata": copy.deepcopy(source_info.get("observation_metadata", {}))
+        if not self.trajectory:
+            # Handle different formats of start_observation
+            if start_observation is None:
+                # No observation provided, create empty state
+                initial_observation = {"text": "", "image": None}
+                initial_info = {"page": type('SimplePage', (), {'url': ''})(), "observation_metadata": {}}
+            elif isinstance(start_observation, dict) and "observation" in start_observation and "info" in start_observation:
+                # start_observation is already in StateInfo format: {"observation": obs, "info": info}
+                initial_observation = start_observation["observation"]
+                # Deep copy observation_metadata to avoid reference sharing issues
+                source_info = start_observation["info"]
+                initial_info = {
+                    "page": source_info.get("page"),
+                    "fail_error": source_info.get("fail_error", ""),
+                    "observation_metadata": copy.deepcopy(source_info.get("observation_metadata", {}))
+                }
+                # Ensure observation has both text and image fields
+                if isinstance(initial_observation, dict):
+                    if "text" not in initial_observation:
+                        initial_observation["text"] = ""
+                    if "image" not in initial_observation:
+                        initial_observation["image"] = None
+            else:
+                # start_observation is the observation itself
+                initial_observation = start_observation
+                # Ensure observation is a dict with "text" and "image" keys
+                if isinstance(initial_observation, dict):
+                    if "text" not in initial_observation:
+                        initial_observation["text"] = ""
+                    if "image" not in initial_observation:
+                        initial_observation["image"] = None
+                else:
+                    initial_observation = {"text": str(initial_observation) if initial_observation else "", "image": None}
+
+                # Create a simple page-like object with url attribute
+                class SimplePage:
+                    def __init__(self, url: str = ""):
+                        self.url = url
+                initial_info = {
+                    "page": SimplePage(url=""),  # Will be updated when browser is initialized
+                    "observation_metadata": {}
+                }
+
+            initial_state_info = {
+                "observation": copy.deepcopy(initial_observation),
+                "info": copy.deepcopy(initial_info)
             }
             # Ensure observation has text, image, and image_raw fields
             if isinstance(initial_observation, dict):
@@ -291,6 +457,13 @@ class MultiAgentCoordinator:
                 "page": SimplePage(url=""),  # Will be updated when browser is initialized
                 "observation_metadata": {}
             }
+            # Save initial screenshot as step_000.png (playwright full page, no SOM)
+            self._capture_and_save_screenshot(0)  # 初始页截图留档
+            if initial_observation.get("image") is not None:
+                initial_image_path = os.path.join(self.images_dir, "step_000.png")
+                # Convert numpy array to PIL Image and save
+                from PIL import Image
+                import numpy as np
 
         initial_state_info = {
             "observation": initial_observation,
@@ -329,6 +502,7 @@ class MultiAgentCoordinator:
         # Track continuation decision for final summary
         continuation_decision = {"reason": "Execution started"}
         
+        step_result = None
         # Main execution loop
         while True:
             try:
@@ -366,7 +540,8 @@ class MultiAgentCoordinator:
                 
             except Exception as e:
                 # Record error and continue
-                print(f"❌ Execution error: {e}")
+                print(f"Error during agent execution: {e}")
+                traceback.print_exc()
                 break
 
         # Finalize execution
@@ -412,6 +587,10 @@ class MultiAgentCoordinator:
             "stop_action_data": self.stop_action_data,  # Include stop action data
         }
         self.log_agent_response("execution_summary", len(self.actions), final_summary)
+
+        # Save WebJudge style result
+        final_result_response = step_result.get("execution_result", {}).get("action", {}).get("answer",{}) or ("Task completed" if task_completed else "Task incomplete")  # 生成最终回答
+        self._save_webjudge_result(final_result_response)  # 写出 WebJudge 结果
 
         # Return comprehensive execution result
         return {
@@ -617,7 +796,7 @@ class MultiAgentCoordinator:
             # Check if execution was successful and contains action
             if "action" in execution_result:
                 executed_action = execution_result["action"]
-                self.actions.append(executed_action)
+                self.actions.append(copy.deepcopy(executed_action))
 
                 # Check if this is a STOP action
                 action_type = executed_action.get("action_type")
@@ -650,6 +829,8 @@ class MultiAgentCoordinator:
 
                         # Log observation (text and image)
                         self.log_observation(step_number, obs)
+                        # Capture playwright full-page screenshot for WebJudge
+                        self._capture_and_save_screenshot(step_number)  # 保存当前步截图
 
                         # Determine if intention is fulfilled based on execution success
                         intention_fulfilled = reward == 1.0  # reward is 1.0 for success, 0.0 for failure
@@ -735,6 +916,47 @@ class MultiAgentCoordinator:
         # Add to trajectory (following run.py pattern)
         # trajectory should contain: StateInfo, Action, StateInfo, Action, StateInfo...
         # trajectory[-1] should already be the current StateInfo, so we just add action and new state
+        prev_state_info = None
+
+        if self.trajectory and isinstance(self.trajectory[-1], dict):
+            prev_state_info = self.trajectory[-1]
+            
+        else:
+            prev_state_info = None
+        
+
+        # observation_metadata = self.trajectory[-1].get("info", {}).get("observation_metadata", {})
+
+        # step_meta_path = os.path.join(
+        #     self.trajectory_dir,
+        #     f"observation_metadata_step_{self.workflow_manager.current_step:03d}_id_01.json"
+        # )
+        # try:
+        #     with open(step_meta_path, "w", encoding="utf-8") as f:
+        #         json.dump(observation_metadata, f, ensure_ascii=False, indent=2)
+        # except Exception as e:
+        #     print(f"Warning: Failed to save observation metadata for step {self.workflow_manager.current_step}: {e}")
+
+
+        # 在trajectory更新前，保存所有偶数位置的observation_metadata
+        # for pos in range(0, len(self.trajectory), 2):  # 偶数位置是StateInfo
+        #     if pos < len(self.trajectory):
+        #         state_info = self.trajectory[pos]
+        #         if isinstance(state_info, dict):
+        #             observation_metadata = state_info.get("info", {}).get("observation_metadata", {})
+
+        #             step_meta_path = os.path.join(
+        #                 self.trajectory_dir,
+        #                 f"observation_metadata_step_{self.workflow_manager.current_step:03d}_trajectory_pos_{pos:02d}.json"
+        #             )
+        #             try:
+        #                 with open(step_meta_path, "w", encoding="utf-8") as f:
+        #                     json.dump(observation_metadata, f, ensure_ascii=False, indent=2)
+        #             except Exception as e:
+        #                 print(f"Warning: Failed to save trajectory observation metadata for step {self.workflow_manager.current_step}, pos {pos}: {e}")
+
+        prev_info_for_desc = prev_state_info.get("info") if isinstance(prev_state_info, dict) else None
+
         self.trajectory.append(executed_action)
         if info is None:
             info = {
@@ -743,20 +965,19 @@ class MultiAgentCoordinator:
             }
 
         # Create new state_info from new_observation
-        # IMPORTANT: Deep copy observation_metadata to avoid reference sharing issue.
-        # browser_env.step() returns info with observation_metadata that references
-        # internal processor.meta_data which gets mutated on subsequent steps.
-        # Without deep copy, all trajectory entries would share the same metadata.
-        info_copy = {
-            "page": info.get("page"),  # page is already a new DetachedPage per step
-            "fail_error": info.get("fail_error", ""),
-            "observation_metadata": copy.deepcopy(info.get("observation_metadata", {}))
-        }
+        # 深拷贝info以避免trajectory中所有StateInfo引用同一个对象
         new_state_info = {
-            "observation": new_observation,  # new_observation is now observation format
-            "info": info_copy
+            "observation": copy.deepcopy(new_observation),  # new_observation is now observation format
+            "info": copy.deepcopy(info)
         }
         self.trajectory.append(new_state_info)
+
+        # WebJudge logging
+        self.webjudge_thoughts.append(current_intention)  # 记录本步意图
+        use_html_format = False  # 如需 HTML 标签样式，改为 True
+        formatter = self._format_action_for_webjudge_html if use_html_format else self._format_action_for_webjudge
+        self.webjudge_action_history.append(formatter(executed_action, prev_info_for_desc))  # 记录本步动作（使用执行前的 info 避免 DOM 变动导致缺元素）
+        self._capture_and_save_screenshot(step_number)  # 记录本步截图
 
         # Update current observation to stay in sync with trajectory
         self.current_observation = new_observation
