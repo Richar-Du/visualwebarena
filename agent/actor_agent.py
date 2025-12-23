@@ -74,9 +74,10 @@ class ActorAgent:
                 meta_data=meta_data or {},
             )
 
-            # Extract action and LLM response
+            # Extract action, LLM response, and extracted intention
             action = result["action"]
             llm_response = result["llm_response"]
+            extracted_intention = result.get("extracted_intention", intention)
 
             # Validate the generated action (execution will be handled externally)
             validation_result = self.action_executor.validate_action(action)
@@ -86,6 +87,7 @@ class ActorAgent:
                 "generated_action": action,
                 "validation_result": validation_result,
                 "llm_response": llm_response,
+                "extracted_intention": extracted_intention,
                 # intention_fulfilled will be determined after actual execution
             })
 
@@ -95,7 +97,8 @@ class ActorAgent:
             return {
                 "action": action,
                 "validation_result": validation_result,
-                "intention": intention,
+                "intention": intention,  # Original high-level intention (user_goal)
+                "extracted_intention": extracted_intention,  # LLM's reasoning from <think> tags
                 # intention_fulfilled will be determined by actual browser execution
                 "intention_fulfilled": False,  # Default to False, will be updated after execution
                 "execution_history_length": len(self.intention_history),

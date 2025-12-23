@@ -46,9 +46,9 @@ class SummaryGenerator:
         all_his_actions = self._get_history_action_text(actions)
 
         # Get recent context O_{t-2}, I_{t-1}, A_{t-1}, O_{t-1}, I_{t}, A_{t}, O_{t}
-        recent_observations = observations[-3:] if len(observations) >= 3 else observations
-        recent_actions = actions[-2:] if len(actions) >= 2 else actions
-        recent_intentions = intentions[-2:] if len(intentions) >= 2 else intentions
+        recent_observations = observations[-2:] if len(observations) >= 2 else observations
+        recent_actions = actions[-1:] if len(actions) >= 1 else actions
+        recent_intentions = intentions[-1:] if len(intentions) >= 1 else intentions
 
         # Generate summary using prompt template
         if current_summary is None:

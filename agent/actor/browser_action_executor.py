@@ -109,10 +109,14 @@ class BrowserActionExecutor:
             action = create_none_action()
             action["raw_prediction"] = response
 
+        # Extract the actual intention from the LLM's thinking process
+        extracted_intention = self._extract_intention(response)
+
         return {
             "action": action,
             "llm_response": response,
-            "intention": intention,
+            "intention": intention,  # Original high-level intention (user_goal)
+            "extracted_intention": extracted_intention,  # LLM's reasoning from <think> tags
         }
 
     def _execute_multimodal(
@@ -229,4 +233,29 @@ class BrowserActionExecutor:
         raise ActionParsingError(
             f"Cannot parse action from response {response}"
         )
+
+    def _extract_intention(self, response: str) -> str:
+        """Extract intention from LLM response.
+
+        Extract the <think> portion which contains the reasoning and intention.
+
+        Args:
+            response: LLM response containing <think> and <action> tags
+
+        Returns:
+            Extracted intention text from <think> tags, or fallback text
+        """
+        # Extract content between <think> and </think> tags
+        if "<think>" in response and "</think>" in response:
+            think_start = response.find("<think>")
+            think_end = response.find("</think>")
+            if think_start != -1 and think_end != -1:
+                think_content = response[think_start + 7:think_end].strip()
+                # Truncate if too long (keep most relevant reasoning)
+                if len(think_content) > 500:
+                    think_content = think_content[:500] + "..."
+                return think_content
+
+        # Fallback: if no <think> tags, return a generic intention
+        return f"Execute next step toward goal based on current page state"
 

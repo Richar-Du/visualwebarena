@@ -676,15 +676,24 @@ class MultiAgentCoordinator:
 
             # Show LLM response if available (truncated)
             llm_response = execution_result.get("llm_response", "")
-            if llm_response:
-                print(f"   LLM Response: {llm_response[:500]}{'...' if len(llm_response) > 500 else ''}")
+            # if llm_response:
+            #     print(f"   LLM Response: {llm_response[:500]}{'...' if len(llm_response) > 500 else ''}")
 
+
+            # Update Context Agent with the extracted intention from Actor's reasoning
+            extracted_intention = execution_result.get("extracted_intention")
+            if extracted_intention:
+                print(f"🧠 Updating Context with Actor's intention: {extracted_intention[:100]}{'...' if len(extracted_intention) > 100 else ''}")
+                self.context_agent.update_state(
+                    latest_intention=extracted_intention
+                )
 
             # Log actor agent response summary with full LLM response
             actor_response = {
                 "llm_response": llm_response,  # Complete LLM output including <think> and <action>
                 "action_type": action_type,
-                "fulfilled": intention_fulfilled
+                "fulfilled": intention_fulfilled,
+                "extracted_intention": extracted_intention
             }
             self.log_agent_response("actor_agent", step_number, actor_response)
 

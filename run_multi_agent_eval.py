@@ -378,8 +378,9 @@ def test(args, test_file_list):
     import tempfile
     import subprocess
     import requests
-    
+
     scores = []
+    task_scores = {}
     for cfg_file in test_file_list:
         try:
             render_helper = RenderHelper(cfg_file, result_dir, action_set_tag)
@@ -526,7 +527,8 @@ def test(args, test_file_list):
             )
             
             scores.append(score)
-            
+            task_scores[task_id] = score
+
             result_status = "PASS" if score == 1 else "FAIL"
             logger.info(f"[Result] ({result_status}) Task: {task_id}, Score: {score}")
 
@@ -550,6 +552,23 @@ def test(args, test_file_list):
     env.close()
     if len(scores):
         logger.info(f"Average score: {sum(scores) / len(scores)}")
+
+        # Generate detailed results JSON file
+        results_file = Path(result_dir) / "task_scores.json"
+        results_data = {
+            "task_scores": task_scores,
+            "summary": {
+                "total_tasks": len(scores),
+                "average_score": sum(scores) / len(scores),
+                "passed_tasks": sum(1 for score in scores if score == 1),
+                "failed_tasks": sum(1 for score in scores if score != 1)
+            }
+        }
+
+        with open(results_file, 'w', encoding='utf-8') as f:
+            json.dump(results_data, f, indent=2, ensure_ascii=False)
+
+        logger.info(f"Detailed task scores saved to: {results_file}")
 
 def prepare(args: argparse.Namespace) -> None:
     # convert prompt python files to json
