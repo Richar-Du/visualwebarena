@@ -485,7 +485,7 @@ def test(args, test_file_list):
                             'type': 'Action',
                             'action_type': at_name,
                             'element_id': el.get('element_id'),
-                            'answer_preview': (el.get('answer')),
+                            'answer': (el.get('answer')),
                             'raw_prediction_preview': (el.get('raw_prediction')),
                         }
 

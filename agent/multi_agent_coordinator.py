@@ -521,66 +521,69 @@ class MultiAgentCoordinator:
             }
 
         # 2. Planner Agent generates intention
-        print("🎯 Planner Agent: Generating intention...")
-        try:
-            planning_result = self.planner_agent.generate_intention(
-                user_goal=self.user_goal,
-                context_summary=context_result,
-                current_observation=self.current_observation,
-                previous_intentions=self.intentions,
-            )
+        # print("🎯 Planner Agent: Generating intention...")
+        # try:
+        #     planning_result = self.planner_agent.generate_intention(
+        #         user_goal=self.user_goal,
+        #         context_summary=context_result,
+        #         current_observation=self.current_observation,
+        #         previous_intentions=self.intentions,
+        #     )
 
-            current_intention = planning_result["intention"]
-            self.intentions.append(current_intention)
+        #     current_intention = planning_result["intention"]
+        #     self.intentions.append(current_intention)
 
-            # Show key planner information
-            reasoning = planning_result.get("reasoning", "")
+        #     # Show key planner information
+        #     reasoning = planning_result.get("reasoning", "")
 
-            # Show selected intention
-            print(f"🎯 Selected Intention: {current_intention[:100]}{'...' if len(current_intention) > 100 else ''}")
+        #     # Show selected intention
+        #     print(f"🎯 Selected Intention: {current_intention[:100]}{'...' if len(current_intention) > 100 else ''}")
 
-            # Log planner agent response summary
-            planner_response = {
-                "intention": current_intention,
-                "reasoning": reasoning,
-                "response": planning_result.get("response", "")
-            }
-            self.log_agent_response("planner_agent", step_number, planner_response)
-        except Exception as e:
-            print(f"🎯 Planner Error: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}")
-            # Create fallback planning result for error case
-            planning_result = {
-                "intention": f"Continue working on: {self.user_goal}",
-                "current_subtask": f"Continue working on: {self.user_goal}",
-                # "next_atomic_action": f"Continue working on: {self.user_goal}",
-                "reasoning": f"Fallback intention due to error: {str(e)}",
-                # "all_subtasks": [f"Complete the task: {self.user_goal}"],
-                # "current_step_index": 0,
-                # "total_subtasks": 1,
-                # "task_decomposed": False
-            }
-            current_intention = planning_result["intention"]
-            self.intentions.append(current_intention)
-            current_subtask = planning_result["current_subtask"]
-            all_subtasks = planning_result["all_subtasks"]
+        #     # Log planner agent response summary
+        #     planner_response = {
+        #         "intention": current_intention,
+        #         "reasoning": reasoning,
+        #         "response": planning_result.get("response", "")
+        #     }
+        #     self.log_agent_response("planner_agent", step_number, planner_response)
+        # except Exception as e:
+        #     print(f"🎯 Planner Error: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}")
+        #     # Create fallback planning result for error case
+        #     planning_result = {
+        #         "intention": f"Continue working on: {self.user_goal}",
+        #         "current_subtask": f"Continue working on: {self.user_goal}",
+        #         # "next_atomic_action": f"Continue working on: {self.user_goal}",
+        #         "reasoning": f"Fallback intention due to error: {str(e)}",
+        #         # "all_subtasks": [f"Complete the task: {self.user_goal}"],
+        #         # "current_step_index": 0,
+        #         # "total_subtasks": 1,
+        #         # "task_decomposed": False
+        #     }
+        #     current_intention = planning_result["intention"]
+        #     self.intentions.append(current_intention)
+        #     current_subtask = planning_result["current_subtask"]
+        #     all_subtasks = planning_result["all_subtasks"]
 
-            # Log planner agent error summary
-            error_response = {
-                "error": str(e),
-                "intention": planning_result["intention"],
-                "current_subtask": planning_result["current_subtask"],
-                "next_atomic_action": planning_result["next_atomic_action"],
-                "reasoning": planning_result["reasoning"],
-                "task_decomposed": planning_result["task_decomposed"]
-            }
+        #     # Log planner agent error summary
+        #     error_response = {
+        #         "error": str(e),
+        #         "intention": planning_result["intention"],
+        #         "current_subtask": planning_result["current_subtask"],
+        #         "next_atomic_action": planning_result["next_atomic_action"],
+        #         "reasoning": planning_result["reasoning"],
+        #         "task_decomposed": planning_result["task_decomposed"]
+        #     }
 
         # 3. Actor Agent executes intention
         print("🎬 Actor Agent: Executing intention...")
+        current_intention = self.user_goal
         try:
             # Merge step_number into meta_data while preserving action_history
             # This matches the pattern used in run.py
             meta_data_for_action = self.meta_data.copy()
             meta_data_for_action["step_number"] = step_number
+            # Add context information from context_agent instead of using action_history as previous_action
+            meta_data_for_action["context_summary"] = context_result.get("summary", "No context available")
             
             # Ensure current_observation has text, image, and image_raw fields
             current_obs = self.current_observation or {"text": "", "image": None, "image_raw": None}
@@ -677,9 +680,9 @@ class MultiAgentCoordinator:
                 print(f"   LLM Response: {llm_response[:500]}{'...' if len(llm_response) > 500 else ''}")
 
 
-            # Log actor agent response summary
+            # Log actor agent response summary with full LLM response
             actor_response = {
-                'response': llm_response,
+                "llm_response": llm_response,  # Complete LLM output including <think> and <action>
                 "action_type": action_type,
                 "fulfilled": intention_fulfilled
             }
@@ -820,7 +823,6 @@ class MultiAgentCoordinator:
                 "termination_reason": completion_reason,
                 "step_number": step_number,
                 "context_result": context_result,
-                "planning_result": planning_result,
                 "execution_result": execution_result,
                 "reflection_result": reflection_result,
                 "new_observation": new_observation,
@@ -839,7 +841,6 @@ class MultiAgentCoordinator:
             "should_terminate": False,
             "step_number": step_number,
             "context_result": context_result,
-            "planning_result": planning_result,
             "execution_result": execution_result,
             "reflection_result": reflection_result,
             "new_observation": new_observation,

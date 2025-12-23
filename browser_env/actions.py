@@ -1858,7 +1858,7 @@ def create_id_based_action(action_str: str) -> Action:
             )
             return action
         case "stop":  # stop answer
-            match = re.search(r"stop ?\[(.+)\]", action_str)
+            match = re.search(r"stop ?\[(.+)\]", action_str, re.DOTALL)
             if not match:  # some tasks don't require an answer
                 answer = ""
             else:
