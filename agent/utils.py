@@ -8,6 +8,7 @@ MULTIMODAL_MODELS = [
     "gpt-4o",
     "gpt-4-vision",
     "gpt-4-turbo",
+    "gpt-5.1",
     "gemini",
     "claude-3",
     "qwen",  # Qwen VL models

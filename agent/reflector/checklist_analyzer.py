@@ -3,9 +3,7 @@
 This module performs unified checklist analysis including:
 1. Pattern Check: Detect repetitive or erroneous patterns
 2. Execution Check: Verify if action executed successfully
-3. Subtask Completion Check: Determine if current subtask is completed (NEW)
-4. Subtask Revision Check: Determine if current subtask needs revision
-5. Task Completion Check: Check if overall task is completed
+3. Task Completion Check: Check if overall task is completed
 """
 
 import json
@@ -24,13 +22,11 @@ from ..utils import is_multimodal_model
 
 class ChecklistAnalyzer:
     """Performs unified checklist analysis on execution state.
-    
-    Evaluates 5 key checks:
+
+    Evaluates key checks:
     1. Pattern Check: Detect repetitive or erroneous patterns in recent intents
     2. Execution Check: Verify if the latest action executed successfully
-    3. Subtask Completion Check: Determine if current subtask is completed
-    4. Subtask Revision Check: Determine if current subtask needs revision
-    5. Task Completion Check: Check if the overall task is completed
+    3. Task Completion Check: Check if the overall task is completed
     """
 
     def __init__(self, lm_config: lm_config.LMConfig) -> None:
@@ -43,7 +39,6 @@ class ChecklistAnalyzer:
         image_before: Optional[np.ndarray],
         image_after: Optional[np.ndarray],
         latest_action: Action,
-        current_subtask: str,
         high_level_task: str,
     ) -> Dict[str, Any]:
         """Run unified checklist analysis.
@@ -53,11 +48,10 @@ class ChecklistAnalyzer:
             image_before: Screenshot before action
             image_after: Screenshot after action
             latest_action: The executed action
-            current_subtask: Current subtask being worked on
             high_level_task: Original task goal
 
         Returns:
-            Dictionary with 5 boolean checklist results
+            Dictionary with checklist results
         """
         # Get action details
         action_text = self._decode_action_text(latest_action)
@@ -74,7 +68,6 @@ class ChecklistAnalyzer:
                     action_type=action_type,
                     element_id=element_id,
                     action_text=action_text,
-                    current_subtask=current_subtask,
                     high_level_task=high_level_task,
                 )
                 response = call_llm(self.lm_config, messages).strip()
@@ -90,7 +83,6 @@ class ChecklistAnalyzer:
             action_type=action_type,
             element_id=element_id,
             action_text=action_text,
-            current_subtask=current_subtask,
             high_level_task=high_level_task,
         )
 
@@ -102,7 +94,6 @@ class ChecklistAnalyzer:
         action_type: str,
         element_id: str,
         action_text: str,
-        current_subtask: str,
         high_level_task: str,
     ) -> List[Dict[str, Any]]:
         """Build multimodal prompt for checklist analysis."""
@@ -130,7 +121,6 @@ class ChecklistAnalyzer:
             action_type=action_type,
             element_id=element_id,
             action_text=action_text,
-            current_subtask=current_subtask,
             high_level_task=high_level_task,
         )
 
@@ -157,7 +147,6 @@ class ChecklistAnalyzer:
         action_type: str,
         element_id: str,
         action_text: str,
-        current_subtask: str,
         high_level_task: str,
     ) -> Dict[str, Any]:
         """Fallback text-only checklist analysis."""
@@ -174,7 +163,6 @@ class ChecklistAnalyzer:
             action_type=action_type,
             element_id=element_id,
             action_text=action_text,
-            current_subtask=current_subtask,
             high_level_task=high_level_task,
         )
 
@@ -214,10 +202,6 @@ class ChecklistAnalyzer:
                     result["has_pattern_issue"] = self._to_bool(parsed["has_pattern_issue"])
                 if "execution_successful" in parsed:
                     result["execution_successful"] = self._to_bool(parsed["execution_successful"])
-                if "subtask_completed" in parsed:
-                    result["subtask_completed"] = self._to_bool(parsed["subtask_completed"])
-                if "subtask_needs_revision" in parsed:
-                    result["subtask_needs_revision"] = self._to_bool(parsed["subtask_needs_revision"])
                 if "task_completed" in parsed:
                     result["task_completed"] = self._to_bool(parsed["task_completed"])
 
@@ -248,16 +232,6 @@ class ChecklistAnalyzer:
         elif "successfully" in response_lower or "execution_successful: true" in response_lower:
             result["execution_successful"] = True
 
-        # Subtask completion detection (NEW)
-        if "subtask_completed: true" in response_lower or "subtask is complete" in response_lower:
-            result["subtask_completed"] = True
-        elif "subtask completed" in response_lower and "true" in response_lower:
-            result["subtask_completed"] = True
-
-        # Subtask revision detection
-        if "subtask_needs_revision: true" in response_lower or "needs revision" in response_lower:
-            result["subtask_needs_revision"] = True
-
         # Task completion detection
         if "task_completed: true" in response_lower or "task is complete" in response_lower:
             result["task_completed"] = True
@@ -265,12 +239,10 @@ class ChecklistAnalyzer:
         return result
 
     def _get_default_result(self) -> Dict[str, Any]:
-        """Get default checklist result with 5 boolean values."""
+        """Get default checklist result."""
         return {
             "has_pattern_issue": False,
             "execution_successful": True,
-            "subtask_completed": False,  # NEW: default to False
-            "subtask_needs_revision": False,
             "task_completed": False,
         }
 

@@ -30,4 +30,4 @@ export HF_ENDPOINT=https://hf-mirror.com
 # 获取网页自动登录的cookie
 # bash prepare.sh
 
-python run_multi_agent_eval.py --config_file ./config_vlm.json --test_config_base_dir config_files/vwa/test_shopping  --test_start_idx 10 --test_end_idx 11 --result_dir result/test10 --max_steps 10
+python run_multi_agent_eval.py --config_file ./config_vlm.json --test_config_base_dir config_files/vwa/test_shopping  --test_start_idx 10 --test_end_idx 20 --result_dir result/test10 --max_steps 10

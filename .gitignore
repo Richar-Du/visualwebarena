@@ -151,3 +151,8 @@ logs/*
 *.json
 *.md
 result/*
+*.jpg
+*.png
+*.html
+*.zip
+*.txt

@@ -8,32 +8,30 @@ from browser_env import Trajectory
 from browser_env.utils import Observation
 from llms import lm_config
 
-from agent import PromptAgent  # Import existing PromptAgent
 from .actor.action_executor import ActionExecutor
+from .actor.browser_action_executor import BrowserActionExecutor
 
 
-class ActorAgent(PromptAgent):
+class ActorAgent:
     """Executes high-level intentions using specific browser actions.
 
-    Extends the existing PromptAgent to work with high-level intentions from
-    the Planner Agent while maintaining compatibility with the existing codebase.
+    Uses the new prompt system from multi_agent_prompts_fixed.json to generate
+    browser actions from high-level intentions.
     """
 
     def __init__(
         self,
         action_set_tag: str,
         lm_config: lm_config.LMConfig,
-        prompt_constructor,
-        captioning_fn=None,
+        prompt_constructor=None,  # Kept for compatibility but not used
+        captioning_fn=None,  # Kept for compatibility but not used
     ) -> None:
-        """Initialize Actor Agent with enhanced capabilities."""
-        # Initialize parent PromptAgent with existing parameters
-        super().__init__(
-            action_set_tag=action_set_tag,
-            lm_config=lm_config,
-            prompt_constructor=prompt_constructor,
-            captioning_fn=captioning_fn,
-        )
+        """Initialize Actor Agent with the new prompt system."""
+        self.action_set_tag = action_set_tag
+        self.lm_config = lm_config
+
+        # Initialize new browser action executor with the new prompt system
+        self.browser_action_executor = BrowserActionExecutor(lm_config, action_set_tag)
 
         # Initialize action executor for validation and tracking
         self.action_executor = ActionExecutor(action_set_tag)
@@ -56,7 +54,7 @@ class ActorAgent(PromptAgent):
             current_observation: Current page observation
             trajectory: Current execution trajectory
             meta_data: Additional metadata for execution
-            images: Optional input images
+            images: Optional input images (not used, kept for compatibility)
 
         Returns:
             Dictionary containing execution results
@@ -69,27 +67,17 @@ class ActorAgent(PromptAgent):
         }
 
         try:
-            # Create a simple intention message that works with the existing prompt system
-            intention_message = f"Execute browser actions to fulfill this intention: {intention}"
-            
-            # Use existing PromptAgent's next_action method with the intention message
-            try:
-                action = self.next_action(
-                    trajectory=trajectory,
-                    intent=intention_message,
-                    meta_data=meta_data or {},
-                    images=images,
-                    output_response=True,
-                )
-            except Exception as next_action_error:
-                import traceback
-                traceback.print_exc()
-                print(f"🎬 Actor Error: {str(next_action_error)[:200]}")
-                print(f"🎬 Error Type: {type(next_action_error).__name__}")
-                raise next_action_error
+            # Use the new BrowserActionExecutor to generate action
+            result = self.browser_action_executor.execute_action(
+                intention=intention,
+                trajectory=trajectory,
+                meta_data=meta_data or {},
+            )
 
-            # Extract LLM raw response from action
-            llm_response = action.get("raw_prediction", "No LLM response available")
+            # Extract action, LLM response, and extracted intention
+            action = result["action"]
+            llm_response = result["llm_response"]
+            extracted_intention = result.get("extracted_intention", intention)
 
             # Validate the generated action (execution will be handled externally)
             validation_result = self.action_executor.validate_action(action)
@@ -99,6 +87,7 @@ class ActorAgent(PromptAgent):
                 "generated_action": action,
                 "validation_result": validation_result,
                 "llm_response": llm_response,
+                "extracted_intention": extracted_intention,
                 # intention_fulfilled will be determined after actual execution
             })
 
@@ -108,7 +97,8 @@ class ActorAgent(PromptAgent):
             return {
                 "action": action,
                 "validation_result": validation_result,
-                "intention": intention,
+                "intention": intention,  # Original high-level intention (user_goal)
+                "extracted_intention": extracted_intention,  # LLM's reasoning from <think> tags
                 # intention_fulfilled will be determined by actual browser execution
                 "intention_fulfilled": False,  # Default to False, will be updated after execution
                 "execution_history_length": len(self.intention_history),
@@ -119,10 +109,10 @@ class ActorAgent(PromptAgent):
         except Exception as e:
             # Provide more detailed error information
             error_details = str(e)
-            if "prompt_constructor" in error_details.lower():
-                error_details += " (Prompt constructor issue)"
-            elif "next_action" in error_details.lower():
-                error_details += " (next_action method failure)"
+            if "prompt" in error_details.lower():
+                error_details += " (Prompt system issue)"
+            elif "action" in error_details.lower():
+                error_details += " (Action generation failure)"
             elif "traject" in error_details.lower():
                 error_details += " (Trajectory processing issue)"
 

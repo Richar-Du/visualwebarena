@@ -63,8 +63,8 @@ class Evaluator(object):
     @staticmethod
     def get_last_action(trajectory: Trajectory) -> Action:
         try:
-            is_bearable(trajectory[-1], Action)
-            last_action = trajectory[-1]
+            is_bearable(trajectory[-2], Action)
+            last_action = trajectory[-2]
         except Exception:
             raise ValueError(
                 "The last element of trajectory should be an action, add a fake stop action if needed"
@@ -75,8 +75,8 @@ class Evaluator(object):
     @staticmethod
     def get_last_state(trajectory: Trajectory) -> StateInfo:
         try:
-            is_bearable(trajectory[-2], StateInfo)
-            last_state = trajectory[-2]
+            is_bearable(trajectory[-1], StateInfo)
+            last_state = trajectory[-1]
         except Exception:
             raise ValueError(
                 "The second last element of trajectory should be a state, add a fake stop action if needed"

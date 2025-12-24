@@ -34,7 +34,7 @@ export HF_ENDPOINT=https://hf-mirror.com
 # Run the multi-agent script
 python run_multi_agent.py \
   --start_url "http://18.216.88.140:7770/" \
-  --intent "Show me the first item with round cookies in the \"ice cream sandwiches\" search results by descending relevance." \
+  --intent "Show me the first painting in the \"van gogh\" search results by descending price." \
   --max_steps 10 \
   --config_file config_vlm.json
 

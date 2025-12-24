@@ -1,7 +1,6 @@
 """Current state analysis for planning Agent with multimodal support.
 
-This module generates the next atomic action based on a GIVEN current subtask.
-The current subtask is explicitly provided by SubtaskManager (not inferred by LLM).
+This module generates the next atomic action based on the current task state.
 """
 
 from typing import Any, Dict, Optional
@@ -16,13 +15,7 @@ from ..utils import is_multimodal_model
 
 
 class CurrentStateAnalyzer:
-    """Generates next atomic action for a given subtask with multimodal support.
-    
-    Key change from previous version:
-    - NO LONGER infers which subtask is current (that's done by SubtaskManager)
-    - Receives current_subtask as INPUT parameter
-    - Only outputs next_atomic_action
-    """
+    """Generates next atomic action for the current task with multimodal support."""
 
     def __init__(self, lm_config: lm_config.LMConfig) -> None:
         self.lm_config = lm_config
@@ -32,15 +25,13 @@ class CurrentStateAnalyzer:
     def analyze_current_state(
         self,
         user_goal: str,
-        current_subtask: str,  # Now explicit input, not inferred
         current_observation: Observation,
         context_summary: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Generate next atomic action for the given subtask.
+        """Generate next atomic action for the current task.
 
         Args:
             user_goal: Original user goal
-            current_subtask: Current subtask being worked on (from SubtaskManager)
             current_observation: Current page observation (includes image_raw for visual analysis)
             context_summary: Current context from Context Agent
 
@@ -71,7 +62,6 @@ class CurrentStateAnalyzer:
             try:
                 analysis = self._analyze_multimodal(
                     user_goal=user_goal,
-                    current_subtask=current_subtask,
                     current_image=current_image,
                     context_summary=cur_summary,
                     memory=memory,
@@ -83,7 +73,6 @@ class CurrentStateAnalyzer:
         # Fallback to text-only analysis
         return self._analyze_text_only(
             user_goal=user_goal,
-            current_subtask=current_subtask,
             current_page_text=current_page_text,
             context_summary=cur_summary,
             memory=memory,
@@ -92,7 +81,6 @@ class CurrentStateAnalyzer:
     def _analyze_multimodal(
         self,
         user_goal: str,
-        current_subtask: str,
         current_image: np.ndarray,
         context_summary: str,
         memory: str,
@@ -111,7 +99,6 @@ class CurrentStateAnalyzer:
                 "next_action_generation_w_mem",
                 memory=memory,
                 user_goal=user_goal,
-                current_subtask=current_subtask,
                 context_summary=context_summary
             )
         else:
@@ -119,7 +106,6 @@ class CurrentStateAnalyzer:
                 "planner_agent",
                 "next_action_generation",
                 user_goal=user_goal,
-                current_subtask=current_subtask,
                 context_summary=context_summary
             )
 
@@ -136,12 +122,11 @@ class CurrentStateAnalyzer:
         messages = [{"role": "user", "content": content}]
 
         response = call_llm(self.lm_config, messages).strip()
-        return self._parse_analysis_response(response, current_subtask)
+        return self._parse_analysis_response(response, user_goal)
 
     def _analyze_text_only(
         self,
         user_goal: str,
-        current_subtask: str,
         current_page_text: str,
         context_summary: str,
         memory: str,
@@ -154,7 +139,6 @@ class CurrentStateAnalyzer:
                 "next_action_generation_w_mem_text",
                 memory=memory,
                 user_goal=user_goal,
-                current_subtask=current_subtask,
                 current_page_text=current_page_text,
                 context_summary=context_summary,
             )
@@ -163,7 +147,6 @@ class CurrentStateAnalyzer:
                 "planner_agent",
                 "next_action_generation_text",
                 user_goal=user_goal,
-                current_subtask=current_subtask,
                 current_page_text=current_page_text,
                 context_summary=context_summary,
             )
@@ -173,25 +156,21 @@ class CurrentStateAnalyzer:
                 self.lm_config, [{"role": "user", "content": prompt}]
             ).strip()
             # Parse the LLM response into structured format
-            analysis = self._parse_analysis_response(response, current_subtask)
+            analysis = self._parse_analysis_response(response, user_goal)
 
         except Exception as e:
             # Fallback analysis
             print(f"🎯 Current State Analyzer: Error in analysis: {str(e)}")
-            analysis = self._generate_fallback_analysis(user_goal, current_subtask, str(e))
+            analysis = self._generate_fallback_analysis(user_goal, str(e))
 
         return analysis
 
-    def _parse_analysis_response(self, response: str, current_subtask: str) -> Dict[str, Any]:
-        """Parse LLM response into structured format using XML tags.
-        
-        Now only extracts next_action (current_subtask is provided as input).
-        """
+    def _parse_analysis_response(self, response: str, user_goal: str) -> Dict[str, Any]:
+        """Parse LLM response into structured format using XML tags."""
         import re
 
         # Default analysis structure
         analysis = {
-            "current_subtask": current_subtask,  # Provided as input, not inferred
             "next_atomic_action": "",
             "reasoning": "",
             "response": response
@@ -214,18 +193,17 @@ class CurrentStateAnalyzer:
 
         # If no next action extracted, use a simple fallback
         if not analysis["next_atomic_action"]:
-            print(f"🎯 Current State Analyzer: No next atomic action extracted, using current subtask: {current_subtask}")
-            analysis["next_atomic_action"] = f"Continue working on: {current_subtask}"
+            print(f"🎯 Current State Analyzer: No next atomic action extracted, using user goal: {user_goal}")
+            analysis["next_atomic_action"] = f"Continue working on: {user_goal}"
 
         return analysis
 
-    def _generate_fallback_analysis(self, user_goal: str, current_subtask: str, error: str) -> Dict[str, Any]:
+    def _generate_fallback_analysis(self, user_goal: str, error: str) -> Dict[str, Any]:
         """Generate fallback state analysis when LLM fails."""
         # Generate simple fallback action
-        next_action = f"Continue working on: {current_subtask}"
+        next_action = f"Continue working on: {user_goal}"
 
         return {
-            "current_subtask": current_subtask,
             "next_atomic_action": next_action,
             "reasoning": f"Fallback analysis due to error: {error}"
         }
