@@ -6,6 +6,7 @@ with explicit subtask state management and task completion handling.
 
 from typing import Any, Dict, List, Optional, Union
 import json
+import re
 import os
 import traceback
 from datetime import datetime
@@ -231,41 +232,109 @@ class MultiAgentCoordinator:
             return None
 
     def _format_action_for_webjudge(self, executed_action: Action, info: Optional[Dict[str, Any]]) -> str:
-        """Format action string for WebJudge action_history."""
+        """Format action string for WebJudge action_history.
+        输出格式：action [id] [tag] [text] -> action_type
+        在 SOM 模式下确保 id/tag/text 与模型在观察中看到的一致：
+        - 优先从上一状态的 text 观察解析 [id] [tag] [text]
+        - 若不可用，再尝试从 raw_prediction 中解析
+        - 非 SOM 模式或仍失败时再回退到可访问性树角色或启发式
+        """
         action_type = executed_action.get("action_type", "UNKNOWN")
-        description = executed_action.get("raw_prediction") or action_type  # 默认用原始预测
-        observation_metadata = None
-        if info and isinstance(info, dict):
-            observation_metadata = info.get("observation_metadata")
+        raw_pred = executed_action.get("raw_prediction") or ""
+        action_set_tag = getattr(self.actor_agent, "action_set_tag", "id_accessibility_tree")
 
-        # 将每步的 observation_metadata 单独存文件，便于按步排查
-        # step_meta_path = os.path.join(
-        #     self.trajectory_dir,
-        #     f"observation_metadata_step_{self.workflow_manager.current_step:03d}.json"
-        # )
-        # step_meta_path_action = os.path.join(
-        #     self.trajectory_dir,
-        #     f"observation_metadata_step_{self.workflow_manager.current_step:03d}_action.txt"
-        # )
-        # try:
-        #     with open(step_meta_path, "w", encoding="utf-8") as f:
-        #         json.dump(observation_metadata, f, ensure_ascii=False, indent=2)
-        #     with open(step_meta_path_action, "w", encoding="utf-8") as f:
-        #         f.write(str(executed_action.get("element_id")))
-        # except Exception as e:
-        #     print(f"Warning: Failed to save observation metadata for step {self.workflow_manager.current_step}: {e}")
+        # 优先使用解析器得到的 element_id
+        elem_id = str(executed_action.get("element_id") or "")
+        tag = ""
+        text = ""
 
-        if observation_metadata:
+        # 1) 从上一状态的 text 观察中解析 "[id] [tag] [text]"（优先使用调用方提供的 prev_text_observation）
+        print(f"action_set_tag={action_set_tag}")
+        if action_set_tag == "som":
             try:
-                description = get_action_description(
-                    executed_action,
-                    observation_metadata,
-                    getattr(self.actor_agent, "action_set_tag", "id_accessibility_tree"),
-                    getattr(self.actor_agent, "prompt_constructor", None),
-                )
+                prev_text = ""
+                if info and isinstance(info, dict):
+                    prev_text = info.get("prev_text_observation") or ""
+                if not prev_text:
+                    # 回退：通过 trajectory 寻找上一个状态的 text 观察
+                    found_first_dict = False
+                    for item in reversed(self.trajectory):
+                        if isinstance(item, dict):
+                            if not found_first_dict:
+                                found_first_dict = True  # 跳过最新 new_state_info
+                                continue
+                            prev_text = item.get("observation", {}).get("text", "")
+                            break
+                if prev_text:
+                    id_tag_text = {}
+                    for line in str(prev_text).splitlines():
+                        m3 = re.search(r"\[\s*(\d+)\s*\]\s*\[\s*([^\]]+)\s*\]\s*\[\s*(.*?)\s*\]", line)
+                        if m3:
+                            _id = m3.group(1)
+                            id_tag_text[_id] = (m3.group(2).strip(), m3.group(3).strip())
+                    if elem_id and elem_id in id_tag_text:
+                        tag, text = id_tag_text[elem_id]
+                    elif not elem_id and id_tag_text:
+                        # 如果未提供 element_id，取第一行作为默认
+                        first_id = next(iter(id_tag_text.keys()))
+                        elem_id = first_id
+                        tag, text = id_tag_text[first_id]
             except Exception:
                 pass
-        return f"{description} -> {action_type}"
+
+        # 2) 若未解析到，则尝试从 raw_prediction 中解析 "[id] [tag] [text]" 或 "[id] [tag]"
+        if (not tag or not text):
+            try:
+                m3 = re.search(r"\[\s*(\d+)\s*\]\s*\[\s*([^\]]+)\s*\]\s*\[\s*(.*?)\s*\]", raw_pred)
+                m2 = re.search(r"\[\s*(\d+)\s*\]\s*\[\s*([^\]]+)\s*\]", raw_pred) if not m3 else None
+                if m3:
+                    if not elem_id:
+                        elem_id = m3.group(1)
+                    tag = tag or m3.group(2).strip()
+                    text = text or m3.group(3).strip()
+                elif m2:
+                    if not elem_id:
+                        elem_id = m2.group(1)
+                    tag = tag or m2.group(2).strip()
+            except Exception:
+                pass
+
+        # 3) 非 SOM 或仍失败：从可访问性树元数据提取角色(tag)和名称(text)
+        if (not tag or not text) and info and isinstance(info, dict):
+            observation_metadata = info.get("observation_metadata") or {}
+            text_meta = observation_metadata.get("text") or {}
+            obs_nodes_info = text_meta.get("obs_nodes_info") or {}
+            node_info = obs_nodes_info.get(elem_id)
+            if node_info:
+                node_text = node_info.get("text", "")
+                # node_text 形如："[1234] button 'Add to Cart' ..."
+                try:
+                    after = node_text.split("]", 1)[1].strip()
+                    role = after.split(" ", 1)[0]
+                    name_match = re.search(r"'([^']*)'", after)
+                    if role and not tag:
+                        tag = role
+                    if name_match and not text:
+                        text = name_match.group(1)
+                except Exception:
+                    pass
+
+        # 4) 最后回退：基于 action_type 的启发式
+        if not tag:
+            tag_map = {
+                ActionTypes.TYPE: "textbox",
+                ActionTypes.CLICK: "clickable",
+                ActionTypes.HOVER: "element",
+                ActionTypes.GOTO_URL: "url",
+            }
+            tag = tag_map.get(action_type, "element")
+
+        if not elem_id:
+            elem_id = "unknown"
+        if text is None:
+            text = ""
+
+        return f"[{elem_id}] [{tag}] [{text}] -> {action_type}"
 
     def _format_action_for_webjudge_html(self, executed_action: Action, info: Optional[Dict[str, Any]]) -> str:
         """备用：尽量还原原始 HTML 的动作描述（如 <a href="...">文本</a> -> CLICK）。
@@ -956,6 +1025,9 @@ class MultiAgentCoordinator:
         #                 print(f"Warning: Failed to save trajectory observation metadata for step {self.workflow_manager.current_step}, pos {pos}: {e}")
 
         prev_info_for_desc = prev_state_info.get("info") if isinstance(prev_state_info, dict) else None
+        prev_text_observation = prev_state_info.get("observation", {}).get("text", "") if isinstance(prev_state_info, dict) else ""
+        formatter_info = copy.deepcopy(prev_info_for_desc) if isinstance(prev_info_for_desc, dict) else {}
+        formatter_info["prev_text_observation"] = prev_text_observation
 
         self.trajectory.append(executed_action)
         if info is None:
@@ -976,7 +1048,7 @@ class MultiAgentCoordinator:
         self.webjudge_thoughts.append(current_intention)  # 记录本步意图
         use_html_format = False  # 如需 HTML 标签样式，改为 True
         formatter = self._format_action_for_webjudge_html if use_html_format else self._format_action_for_webjudge
-        self.webjudge_action_history.append(formatter(executed_action, prev_info_for_desc))  # 记录本步动作（使用执行前的 info 避免 DOM 变动导致缺元素）
+        self.webjudge_action_history.append(formatter(executed_action, formatter_info))  # 记录本步动作（使用执行前的 info 避免 DOM 变动导致缺元素）
         self._capture_and_save_screenshot(step_number)  # 记录本步截图
 
         # Update current observation to stay in sync with trajectory
