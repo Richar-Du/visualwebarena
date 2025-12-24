@@ -257,6 +257,43 @@ class MultiAgentCoordinator:
         raw_pred = executed_action.get("raw_prediction") or ""
         action_set_tag = getattr(self.actor_agent, "action_set_tag", "id_accessibility_tree")
 
+        # 对非元素类动作，避免附加任何 [id]/[tag]/[text]
+        element_target_actions = {
+            ActionTypes.CLICK,
+            ActionTypes.TYPE,
+            ActionTypes.HOVER,
+            ActionTypes.CLEAR,
+            ActionTypes.UPLOAD,
+            ActionTypes.CHECK,
+            ActionTypes.SELECT_OPTION,
+        }
+        if action_type not in element_target_actions:
+            if action_type == ActionTypes.SCROLL:
+                direction = executed_action.get("direction", "")
+                return f"scroll [{direction}] -> {action_type}"
+            if action_type == ActionTypes.KEY_PRESS:
+                key_comb = executed_action.get("key_comb", "")
+                return f"press [{key_comb}] -> {action_type}"
+            if action_type == ActionTypes.GOTO_URL:
+                url = executed_action.get("url", "")
+                return f"goto [{url}] -> {action_type}"
+            if action_type == ActionTypes.PAGE_FOCUS:
+                page_number = executed_action.get("page_number", 0)
+                return f"page_focus [{page_number}] -> {action_type}"
+            if action_type == ActionTypes.NEW_TAB:
+                return f"new_tab -> {action_type}"
+            if action_type == ActionTypes.GO_BACK:
+                return f"go_back -> {action_type}"
+            if action_type == ActionTypes.GO_FORWARD:
+                return f"go_forward -> {action_type}"
+            if action_type == ActionTypes.PAGE_CLOSE:
+                return f"close_tab -> {action_type}"
+            if action_type == ActionTypes.STOP:
+                answer = executed_action.get("answer", "")
+                return f"stop [{answer}] -> {action_type}"
+            if action_type == ActionTypes.NONE:
+                return f"none -> {action_type}"
+
         # 优先使用解析器得到的 element_id
         elem_id = str(executed_action.get("element_id") or "")
         tag = ""
@@ -1043,7 +1080,22 @@ class MultiAgentCoordinator:
         self.trajectory.append(new_state_info)
 
         # WebJudge logging
-        self.webjudge_thoughts.append(current_intention)  # 记录本步意图
+        # 优先保存 actor_agent 的思考过程（<think>），无则回退到当前意图
+        actor_thought = ""
+        try:
+            if 'extracted_intention' in locals() and extracted_intention:
+                actor_thought = extracted_intention
+            elif 'llm_response' in locals() and llm_response:
+                ts = llm_response.find("<think>")
+                te = llm_response.find("</think>")
+                if ts != -1 and te != -1 and te > ts:
+                    actor_thought = llm_response[ts + 7:te].strip()
+        except Exception:
+            pass
+        if not actor_thought:
+            actor_thought = current_intention
+        self.webjudge_thoughts.append(actor_thought)
+
         use_html_format = False  # 如需 HTML 标签样式，改为 True
         formatter = self._format_action_for_webjudge_html if use_html_format else self._format_action_for_webjudge
         self.webjudge_action_history.append(formatter(executed_action, formatter_info))  # 记录本步动作（使用执行前的 info 避免 DOM 变动导致缺元素）
