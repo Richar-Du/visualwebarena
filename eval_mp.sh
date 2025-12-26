@@ -30,4 +30,9 @@ export HF_ENDPOINT=https://hf-mirror.com
 # 获取网页自动登录的cookie
 # bash prepare.sh
 
-python run_multi_agent_eval.py --config_file ./config_vlm.json --test_config config_files/vwa/config_subset_tiny_shopping.json --result_dir result/test_subset_tiny_shopping --max_steps 10
+# Parallel evaluation with multiprocessing (default: 3 workers)
+# Usage: bash eval_mp.sh [num_workers]
+NUM_WORKERS=${1:-3}
+
+python run_multi_agent_eval_parallel.py --config_file ./config_vlm.json --test_config config_files/vwa/config_subset_tiny_shopping.json --result_dir result/test_subset_tiny_shopping_parallel --max_steps 10 --num_workers $NUM_WORKERS
+

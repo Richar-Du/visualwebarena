@@ -160,9 +160,7 @@ def config():
                        help="Show configuration without executing")
 
     # eval
-    parser.add_argument("--test_config_base_dir", type=str)
-    parser.add_argument("--test_start_idx", type=int, default=0, help="Start index (inclusive) for test config files")
-    parser.add_argument("--test_end_idx", type=int, default=1, help="End index (exclusive) for test config files")
+    parser.add_argument("--test_config", type=str, help="Path to test config JSON file (e.g., config_subset.json)")
     parser.add_argument("--eval_captioning_model_device", type=str, default="cpu")
     parser.add_argument("--eval_captioning_model", type=str, default="qwen3-vl-plus")
     parser.add_argument("--captioning_model", type=str, default="qwen3-vl-plus")
@@ -364,15 +362,6 @@ def test(args, test_file_list):
         captioning_fn=caption_image_fn if observation_type == "accessibility_tree_with_captioner" else None,
     )
 
-    # Create multi-agent coordinator with browser environment
-    coordinator = MultiAgentCoordinator(lm_cfg,
-                                        base_agent,
-                                        browser_env=env,
-                                        result_dir=result_dir,
-                                        memory_config=config.get('memory', {}),
-                                        clear_result_dir=config.get('output', {}).get('clear_result_dir', False),
-                                        save_images=config.get('output', {}).get('save_images', True))
-
     # Execute workflow with initial observation from browser
     # Use start_url from config if available
     import tempfile
@@ -381,14 +370,35 @@ def test(args, test_file_list):
 
     scores = []
     task_scores = {}
-    for cfg_file in test_file_list:
+    task_details = {}
+    for cfg_file, task_name in test_file_list:
         try:
-            render_helper = RenderHelper(cfg_file, result_dir, action_set_tag)
-            
+            # Load config to get task_id
+            with open(cfg_file) as f:
+                _c = json.load(f)
+                task_id = str(_c["task_id"])
+
+            # Create task-specific result directory with format {task}_{task_id}
+            result_folder_name = f"{task_name}_{task_id}"
+            task_result_dir = os.path.join(result_dir, result_folder_name)
+            if not Path(task_result_dir).exists():
+                Path(task_result_dir).mkdir(parents=True, exist_ok=True)
+
+            render_helper = RenderHelper(cfg_file, task_result_dir, action_set_tag)
+
+            # Create multi-agent coordinator with task-specific result directory
+            coordinator = MultiAgentCoordinator(lm_cfg,
+                                                base_agent,
+                                                browser_env=env,
+                                                result_dir=task_result_dir,
+                                                memory_config=config.get('memory', {}),
+                                                clear_result_dir=config.get('output', {}).get('clear_result_dir', False),
+                                                save_images=config.get('output', {}).get('save_images', True))
+
+            # Re-load config to get task details (since we already loaded task_id above)
             with open(cfg_file) as f:
                 _c = json.load(f)
                 intent = _c["intent"]
-                task_id = _c["task_id"]
                 start_url = _c["start_url"]
                 image_paths = _c.get("image", None)
                 images = []
@@ -497,9 +507,7 @@ def test(args, test_file_list):
                         return {'type': str(type(el)), 'repr': '<unserializable>'}
 
                 simple_traj = [_serialize_element(x) for x in traj]
-                trace_dir = Path(result_dir) / 'traces'
-                trace_dir.mkdir(parents=True, exist_ok=True)
-                traj_path = trace_dir / f"{task_id}_full_trajectory.json"
+                traj_path = Path(task_result_dir) / f"{task_id}_full_trajectory.json"
                 with open(traj_path, 'w', encoding='utf-8') as _f:
                     json.dump(simple_traj, _f, ensure_ascii=False, indent=2)
                 # logger.info(f"Saved sanitized full trajectory to {traj_path}")
@@ -527,14 +535,27 @@ def test(args, test_file_list):
             )
             
             scores.append(score)
-            task_scores[task_id] = score
+            
+            # Store score with task name prefix
+            score_key = f"{task_name}_{task_id}"
+            task_scores[score_key] = score
+
+            # Store detailed task information
+            task_details[score_key] = {
+                "task_name": task_name,
+                "task_id": task_id,
+                "intent": intent,
+                "start_url": start_url,
+                "score": score,
+                "status": "PASS" if score == 1 else "FAIL",
+                "config_file": cfg_file
+            }
 
             result_status = "PASS" if score == 1 else "FAIL"
-            logger.info(f"[Result] ({result_status}) Task: {task_id}, Score: {score}")
+            logger.info(f"[Result] ({result_status}) Task: {task_name}_{task_id}, Score: {score}")
 
             if args.save_trace_enabled:
-                trace_path = Path(args.result_dir) / "traces" / f"{task_id}.zip"
-                trace_path.parent.mkdir(parents=True, exist_ok=True)
+                trace_path = Path(task_result_dir) / f"{task_id}.zip"
                 env.save_trace(trace_path)
                 
         except openai.OpenAIError as e:
@@ -544,7 +565,7 @@ def test(args, test_file_list):
             import traceback
 
             # write to error file
-            with open(Path(args.result_dir) / "error.txt", "a") as f:
+            with open(Path(result_dir) / "error.txt", "a") as f:
                 f.write(f"[Config file]: {cfg_file}\n")
                 f.write(f"[Unhandled Error] {repr(e)}\n")
                 f.write(traceback.format_exc())  # write stack trace to file
@@ -553,10 +574,34 @@ def test(args, test_file_list):
     if len(scores):
         logger.info(f"Average score: {sum(scores) / len(scores)}")
 
+        # Calculate per-task statistics
+        task_statistics = {}
+        for key, score in task_scores.items():
+            task_name = key.rsplit('_', 1)[0]  # Extract task name from {task}_{task_id}
+            if task_name not in task_statistics:
+                task_statistics[task_name] = {
+                    "total": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "scores": []
+                }
+            task_statistics[task_name]["total"] += 1
+            task_statistics[task_name]["scores"].append(score)
+            if score == 1:
+                task_statistics[task_name]["passed"] += 1
+            else:
+                task_statistics[task_name]["failed"] += 1
+        
+        # Calculate average score for each task
+        for task_name, stats in task_statistics.items():
+            stats["average_score"] = sum(stats["scores"]) / len(stats["scores"])
+
         # Generate detailed results JSON file
         results_file = Path(result_dir) / "task_scores.json"
         results_data = {
-            "task_scores": task_scores,
+            "task_scores": task_scores,  # {task}_{task_id} -> score mapping
+            "task_details": task_details,  # Detailed information for each task
+            "task_statistics": task_statistics,  # Per-task statistics
             "summary": {
                 "total_tasks": len(scores),
                 "average_score": sum(scores) / len(scores),
@@ -569,6 +614,11 @@ def test(args, test_file_list):
             json.dump(results_data, f, indent=2, ensure_ascii=False)
 
         logger.info(f"Detailed task scores saved to: {results_file}")
+        
+        # Log per-task statistics
+        logger.info("\n=== Per-Task Statistics ===")
+        for task_name, stats in task_statistics.items():
+            logger.info(f"{task_name}: {stats['passed']}/{stats['total']} passed, average score: {stats['average_score']:.2f}")
 
 def prepare(args: argparse.Namespace) -> None:
     # convert prompt python files to json
@@ -595,16 +645,29 @@ def prepare(args: argparse.Namespace) -> None:
         f.write(f"{LOG_FILE_NAME}\n")
 
 import glob
-def get_unfinished(config_files: list[str], result_dir: str) -> list[str]:
-    result_files = glob.glob(f"{result_dir}/*.html")
-    task_ids = [
-        os.path.basename(f).split(".")[0].split("_")[1] for f in result_files
-    ]
+def get_unfinished(config_files: list[tuple], result_dir: str) -> list[tuple]:
+    """Get unfinished config files.
+    
+    Args:
+        config_files: List of tuples (config_file_path, task_name)
+        result_dir: Directory containing results
+        
+    Returns:
+        List of tuples (config_file_path, task_name) for unfinished tasks
+    """
+    # Get existing result directories
+    if not os.path.exists(result_dir):
+        return config_files
+    
+    result_dirs = [d for d in os.listdir(result_dir) if os.path.isdir(os.path.join(result_dir, d))]
+    completed_keys = set(result_dirs)  # These are in format {task}_{task_id}
+    
     unfinished_configs = []
-    for config_file in config_files:
+    for config_file, task_name in config_files:
         task_id = os.path.basename(config_file).split(".")[0]
-        if task_id not in task_ids:
-            unfinished_configs.append(config_file)
+        result_key = f"{task_name}_{task_id}"
+        if result_key not in completed_keys:
+            unfinished_configs.append((config_file, task_name))
     return unfinished_configs
 
 
@@ -622,20 +685,38 @@ if __name__ == "__main__":
     args.sleep_after_execution = 2.5
     prepare(args)
 
-    test_config_base_dir = args.test_config_base_dir
-
+    # Load test config file
+    if not args.test_config:
+        raise ValueError("--test_config argument is required. Please provide path to config_subset.json")
+    
+    with open(args.test_config, 'r') as f:
+        test_config = json.load(f)
+    
+    # Base directory for test configs
+    test_config_base_dir = "config_files/vwa/"
+    
+    # Build test file list from config_subset.json
     test_file_list = []
-    st_idx = args.test_start_idx
-    ed_idx = args.test_end_idx
-    for i in range(st_idx, ed_idx):
-        test_file_list.append(os.path.join(test_config_base_dir, f"{i}.json"))
+    for task_name, config_files in test_config.items():
+        task_dir = os.path.join(test_config_base_dir, f"test_{task_name}")
+        for config_file in config_files:
+            config_path = os.path.join(task_dir, config_file)
+            if os.path.exists(config_path):
+                test_file_list.append((config_path, task_name))
+            else:
+                logger.warning(f"Config file not found: {config_path}")
+    
+    logger.info(f"Total {len(test_file_list)} tasks to evaluate")
+    
+    # Filter out finished tasks
     test_file_list = get_unfinished(test_file_list, args.result_dir)
-    print(f"Total {len(test_file_list)} tasks left")
+    logger.info(f"Total {len(test_file_list)} tasks left after filtering finished ones")
+    
     args.render = False
     args.render_screenshot = True
     args.save_trace_enabled = True
-
     args.current_viewport_only = True
+    
     dump_config(args)
 
     test(args, test_file_list)

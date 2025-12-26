@@ -125,11 +125,13 @@ class MultiAgentCoordinator:
             # Ensure result directory exists
             os.makedirs(self.result_dir, exist_ok=True)
 
-            # Create images directory
-            os.makedirs(self.images_dir, exist_ok=True)
+            # Create images directories only if saving images is enabled
+            if self.save_images:
+                # Create images directory
+                os.makedirs(self.images_dir, exist_ok=True)
 
-            # Create images_som directory for SOM-annotated screenshots
-            os.makedirs(self.images_som_dir, exist_ok=True)
+                # Create images_som directory for SOM-annotated screenshots
+                os.makedirs(self.images_som_dir, exist_ok=True)
 
             # Create or clear the log file
             with open(self.log_file_path, 'w', encoding='utf-8') as f:

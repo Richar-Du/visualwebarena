@@ -35,7 +35,7 @@
   "output": {
     "result_dir": "logs/demo_multi_agent_vlm",
     "clear_result_dir": false,
-    "save_images": true,
+    "save_images": false,
     "save_trace": true,
     "render_screenshot": true,
     "verbose": true
