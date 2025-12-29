@@ -123,6 +123,16 @@ def evaluate_single_task(
     Returns:
         Dictionary containing task result information
     """
+    # Ensure no asyncio event loop exists before each task evaluation
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        # If we can get a running loop, that's the problem
+        raise RuntimeError("Detected running asyncio loop in task evaluation")
+    except RuntimeError:
+        # Good - no running loop
+        pass
+    
     cfg_file, task_name = task_info
     
     # Setup worker logger
@@ -446,6 +456,29 @@ def worker_process(
         worker_id: Worker process ID
         result_dir: Result directory path
     """
+    # Clean up any inherited asyncio event loop to prevent conflicts with Playwright sync API
+    import asyncio
+    
+    # Method 1: Try to get and close any existing event loop
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.stop()
+        if not loop.is_closed():
+            loop.close()
+    except RuntimeError:
+        pass  # No event loop exists, which is fine
+    
+    # Method 2: Explicitly set event loop to None to ensure no loop exists
+    try:
+        asyncio.set_event_loop(None)
+    except RuntimeError:
+        pass
+    
+    # Method 3: Reset event loop policy
+    asyncio.set_event_loop_policy(None)
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+    
     while True:
         try:
             task_info = task_queue.get(timeout=1)
