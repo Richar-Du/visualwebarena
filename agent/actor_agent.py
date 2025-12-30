@@ -72,6 +72,7 @@ class ActorAgent:
                 intention=intention,
                 trajectory=trajectory,
                 meta_data=meta_data or {},
+                images=images,
             )
 
             # Extract action, LLM response, and extracted intention

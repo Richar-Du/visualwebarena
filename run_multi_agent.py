@@ -122,6 +122,8 @@ def config():
                        help="Override maximum steps (overrides config file)")
     parser.add_argument("--result_dir", type=str,
                        help="Override result directory (overrides config file)")
+    parser.add_argument("--image", type=str, nargs='+',
+                       help="Override input images (one or more image file paths, overrides config file)")
 
     # Debugging options
     parser.add_argument("--verbose", action="store_true",
@@ -155,6 +157,11 @@ def merge_config_with_args(config: Dict[str, Any], args) -> Dict[str, Any]:
                 if "task" not in merged:
                     merged["task"] = {}
                 merged["task"][key] = value
+            elif key == "image":
+                # Handle image override
+                if "task" not in merged:
+                    merged["task"] = {}
+                merged["task"]["image"] = value
             elif key in ["result_dir", "verbose"]:
                 if "output" not in merged:
                     merged["output"] = {}

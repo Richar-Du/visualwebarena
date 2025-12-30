@@ -154,6 +154,12 @@ def evaluate_single_task(
         if not Path(task_result_dir).exists():
             Path(task_result_dir).mkdir(parents=True, exist_ok=True)
 
+        # Copy config file to result directory
+        import shutil
+        config_dest_path = Path(task_result_dir) / f"{task_id}_config.json"
+        shutil.copy2(cfg_file, config_dest_path)
+        worker_logger.info(f"Copied config file to: {config_dest_path}")
+
         # Create LM config
         model_config = config.get('model', {})
         lm_cfg = lm_config.LMConfig(
@@ -290,15 +296,27 @@ def evaluate_single_task(
                 cookie_file_name = os.path.basename(_c["storage_state"])
                 comb = get_site_comb_from_filepath(cookie_file_name)
                 temp_dir = tempfile.mkdtemp()
-                subprocess.run(
+                # Run auto_login.py with environment variables and check return code
+                result = subprocess.run(
                     [
                         "python", "browser_env/auto_login.py",
                         "--auth_folder", temp_dir,
                         "--site_list", *comb,
-                    ]
+                    ],
+                    env=os.environ.copy(),  # Pass environment variables to subprocess
+                    capture_output=True,
+                    text=True
                 )
+                # Check if subprocess succeeded
+                if result.returncode != 0:
+                    error_msg = f"auto_login.py failed with return code {result.returncode}\n"
+                    error_msg += f"STDOUT: {result.stdout}\n"
+                    error_msg += f"STDERR: {result.stderr}"
+                    raise RuntimeError(error_msg)
+                
                 _c["storage_state"] = f"{temp_dir}/{cookie_file_name}"
-                assert os.path.exists(_c["storage_state"])
+                assert os.path.exists(_c["storage_state"]), \
+                    f"Storage state file not found: {_c['storage_state']}"
                 cfg_file = f"{temp_dir}/{os.path.basename(cfg_file)}"
                 with open(cfg_file, "w") as f:
                     json.dump(_c, f)
@@ -324,7 +342,8 @@ def evaluate_single_task(
         res = coordinator.execute_task(
             user_goal=intent,
             start_observation={"observation": obs, "info": info},
-            max_steps=args_dict.get('max_steps', 30)
+            max_steps=args_dict.get('max_steps', 30),
+            images=images if images else None
         )
 
         worker_logger.info(f"Evaluating task {task_name}_{task_id}")

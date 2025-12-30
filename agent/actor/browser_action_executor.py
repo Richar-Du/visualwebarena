@@ -31,6 +31,7 @@ class BrowserActionExecutor:
         intention: str,
         trajectory: Trajectory,
         meta_data: Dict[str, Any],
+        images: Optional[list[Image.Image]] = None,
     ) -> Dict[str, Any]:
         """Generate browser action for the given intention.
 
@@ -38,6 +39,7 @@ class BrowserActionExecutor:
             intention: High-level intention from Planner Agent
             trajectory: Current execution trajectory
             meta_data: Additional metadata including action history
+            images: Optional input images for the task (for multimodal support)
 
         Returns:
             Dictionary containing generated action and metadata
@@ -72,8 +74,9 @@ class BrowserActionExecutor:
             if current_image is None:
                 current_image = obs_data.get("image")
 
-        # Try multimodal approach if supported and image available
-        if self.is_multimodal and current_image is not None:
+        # Try multimodal approach if supported and (current image or input images) available
+        has_input_images = images is not None and len(images) > 0
+        if self.is_multimodal and (current_image is not None or has_input_images):
             try:
                 response = self._execute_multimodal(
                     intention=intention,
@@ -81,6 +84,7 @@ class BrowserActionExecutor:
                     url=url,
                     context=context_summary,
                     current_image=current_image,
+                    input_images=images,
                 )
             except Exception as e:
                 print(f"Multimodal action execution failed: {e}, falling back to text-only")
@@ -126,6 +130,7 @@ class BrowserActionExecutor:
         url: str,
         context: str,
         current_image: np.ndarray,
+        input_images: Optional[list[Image.Image]] = None,
     ) -> str:
         """Execute action generation using multimodal (image + text) input."""
         # Convert numpy array to PIL Image
@@ -151,8 +156,21 @@ class BrowserActionExecutor:
                 "type": "image_url",
                 "image_url": {"url": pil_to_b64(pil_image)}
             },
-            {"type": "text", "text": prompt_text}
         ]
+
+        # Add input images if provided
+        if input_images is not None and len(input_images) > 0:
+            for image_i, input_image in enumerate(input_images):
+                content.extend([
+                    {"type": "text", "text": f"Input image {image_i+1}:"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": pil_to_b64(input_image)}
+                    },
+                ])
+
+        # Add the text prompt
+        content.append({"type": "text", "text": prompt_text})
 
         messages = [{"role": "user", "content": content}]
 
