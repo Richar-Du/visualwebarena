@@ -456,7 +456,8 @@ def test(args, test_file_list):
             res = coordinator.execute_task(
                 user_goal=intent,
                 start_observation={"observation": obs, "info": info},
-                max_steps=args.max_steps
+                max_steps=args.max_steps,
+                images=images if images else None
             )
             
             logger.info("Evaluating trajectory...")
