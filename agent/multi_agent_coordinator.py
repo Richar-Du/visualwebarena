@@ -11,9 +11,12 @@ import copy
 from datetime import datetime
 
 from PIL import Image
+import numpy as np
 
 from browser_env import Action, ActionTypes, Trajectory
 from browser_env.helper_functions import get_action_description
+from browser_env.actions import create_stop_action, _id2key
+from beartype.door import is_bearable
 from llms import lm_config
 
 # Try importing specific Observation types
@@ -30,11 +33,8 @@ ObservationTypeAlias = ObservationType
 
 
 from .context_agent import ContextAgent
-from .planner_agent import PlannerAgent
 from .actor_agent import ActorAgent
 from .reflector_agent import ReflectorAgent
-from .coordinator.workflow_manager import WorkflowManager
-from .coordinator.communication_hub import CommunicationHub
 
 
 class MultiAgentCoordinator:
@@ -71,7 +71,6 @@ class MultiAgentCoordinator:
 
         # Initialize individual agents with memory enabled if specified
         self.context_agent = ContextAgent(lm_config, memory_config)
-        self.planner_agent = PlannerAgent(lm_config)
         self.actor_agent = ActorAgent(
             action_set_tag=action_set_tag,
             lm_config=lm_config,
@@ -80,9 +79,6 @@ class MultiAgentCoordinator:
         )
         self.reflector_agent = ReflectorAgent(lm_config)
 
-        # Initialize coordination components
-        self.workflow_manager = WorkflowManager()
-        self.communication_hub = CommunicationHub()
 
         # Browser environment for action execution
         self.browser_env = browser_env
@@ -108,6 +104,7 @@ class MultiAgentCoordinator:
         # Task configuration
         self.user_goal: str = ""
         self.max_steps: int = 30
+        self.current_step: int = 0
         self.current_observation: Optional["ObservationTypeAlias"] = None
         
         # Stop action data storage (for future evaluation use)
@@ -186,9 +183,6 @@ class MultiAgentCoordinator:
                 if image_to_save is not None:
                     image_path = os.path.join(self.images_dir, f"step_{step_number:03d}.png")
                     # Convert numpy array to PIL Image and save
-                    from PIL import Image
-                    import numpy as np
-
                     if isinstance(image_to_save, np.ndarray):
                         img = Image.fromarray(image_to_save)
                         img.save(image_path)
@@ -198,9 +192,6 @@ class MultiAgentCoordinator:
                 image_som = observation.get("image")
                 if image_som is not None:
                     image_som_path = os.path.join(self.images_som_dir, f"step_{step_number:03d}.png")
-                    from PIL import Image
-                    import numpy as np
-
                     if isinstance(image_som, np.ndarray):
                         img_som = Image.fromarray(image_som)
                         img_som.save(image_som_path)
@@ -237,14 +228,9 @@ class MultiAgentCoordinator:
         self.current_observation = start_observation
 
         # Initialize workflow and monitoring
-        workflow_init = self.workflow_manager.initialize_workflow(max_steps)
+        self.current_step = 0
 
-        # Register agents with communication hub
-        self._register_agents()
 
-        # Update shared context
-        self.communication_hub.update_shared_context("user_goal", user_goal)
-        self.communication_hub.update_shared_context("max_steps", max_steps)
 
         if self.enable_memory:
             # Initialize memory system for this task
@@ -323,9 +309,6 @@ class MultiAgentCoordinator:
             if image_to_save is not None:
                 initial_image_path = os.path.join(self.images_dir, "step_000.png")
                 # Convert numpy array to PIL Image and save
-                from PIL import Image
-                import numpy as np
-
                 if isinstance(image_to_save, np.ndarray):
                     img = Image.fromarray(image_to_save)
                     img.save(initial_image_path)
@@ -335,9 +318,6 @@ class MultiAgentCoordinator:
             image_som = initial_observation.get("image")
             if image_som is not None:
                 initial_som_path = os.path.join(self.images_som_dir, "step_000.png")
-                from PIL import Image
-                import numpy as np
-
                 if isinstance(image_som, np.ndarray):
                     img_som = Image.fromarray(image_som)
                     img_som.save(initial_som_path)
@@ -351,7 +331,11 @@ class MultiAgentCoordinator:
             try:
                 # Check if we should continue
                 context_summary = self._get_current_context_summary()
-                continuation_decision = self.workflow_manager.should_continue_execution(context_summary)
+                # Check step limit - this is the primary stopping condition
+                continuation_decision = {
+                    "should_continue": self.current_step < self.max_steps,
+                    "reason": "Maximum steps reached" if self.current_step >= self.max_steps else "Execution should continue",
+                }
 
                 if not continuation_decision["should_continue"]:
                     self.context_agent.update_state(
@@ -388,8 +372,6 @@ class MultiAgentCoordinator:
 
         # Finalize execution
         # Ensure trajectory ends with an Action for compatibility with evaluators
-        from browser_env.actions import create_stop_action, ActionTypes
-        from beartype.door import is_bearable
         
         # Check if trajectory is empty or the last element is not an Action
         if not self.trajectory or not is_bearable(self.trajectory[-1], Action):
@@ -407,10 +389,6 @@ class MultiAgentCoordinator:
             self.trajectory.append(final_stop_action)
         
         final_context_summary = self._get_current_context_summary()
-        workflow_final = self.workflow_manager.finalize_workflow(
-            final_state="completed",
-            completion_reason=continuation_decision.get("reason", "Execution completed")
-        )
 
         # Log final execution summary - use context agent completion check
         task_completed = self.context_agent.check_task_completion(self.user_goal, actions=self.actions)
@@ -444,25 +422,10 @@ class MultiAgentCoordinator:
                 "reflections": self.reflections,
                 "trajectory_length": len(self.trajectory),
             },
-            "workflow_results": workflow_final,
             "final_context": final_context_summary,
             "stop_action_data": self.stop_action_data,  # Include stop action data
         }
 
-    def _register_agents(self) -> None:
-        """Register all agents with the communication hub."""
-        self.communication_hub.register_agent(
-            "context_agent", {"state": "ready", "capabilities": ["context_management", "summary_generation"]}
-        )
-        self.communication_hub.register_agent(
-            "planner_agent", {"state": "ready", "capabilities": ["task_planning", "intention_generation"]}
-        )
-        self.communication_hub.register_agent(
-            "actor_agent", {"state": "ready", "capabilities": ["action_execution", "browser_interaction"]}
-        )
-        self.communication_hub.register_agent(
-            "reflector_agent", {"state": "ready", "capabilities": ["reflection", "validation", "recovery"]}
-        )
 
     def _execute_coordination_cycle(self, images: Optional[List[Image.Image]] = None) -> Dict[str, Any]:
         """Execute one complete coordination cycle.
@@ -473,7 +436,7 @@ class MultiAgentCoordinator:
         Returns:
             Dictionary containing cycle results
         """
-        step_number = self.workflow_manager.current_step + 1
+        step_number = self.current_step + 1
         print(f"🔄 Executing step {step_number}")
 
 
@@ -522,63 +485,12 @@ class MultiAgentCoordinator:
                 "context_result": context_result,
             }
 
-        # 2. Planner Agent generates intention
-        # print("🎯 Planner Agent: Generating intention...")
-        # try:
-        #     planning_result = self.planner_agent.generate_intention(
-        #         user_goal=self.user_goal,
-        #         context_summary=context_result,
-        #         current_observation=self.current_observation,
-        #         previous_intentions=self.intentions,
-        #     )
-
-        #     current_intention = planning_result["intention"]
-        #     self.intentions.append(current_intention)
-
-        #     # Show key planner information
-        #     reasoning = planning_result.get("reasoning", "")
-
-        #     # Show selected intention
-        #     print(f"🎯 Selected Intention: {current_intention[:100]}{'...' if len(current_intention) > 100 else ''}")
-
-        #     # Log planner agent response summary
-        #     planner_response = {
-        #         "intention": current_intention,
-        #         "reasoning": reasoning,
-        #         "response": planning_result.get("response", "")
-        #     }
-        #     self.log_agent_response("planner_agent", step_number, planner_response)
-        # except Exception as e:
-        #     print(f"🎯 Planner Error: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}")
-        #     # Create fallback planning result for error case
-        #     planning_result = {
-        #         "intention": f"Continue working on: {self.user_goal}",
-        #         "current_subtask": f"Continue working on: {self.user_goal}",
-        #         # "next_atomic_action": f"Continue working on: {self.user_goal}",
-        #         "reasoning": f"Fallback intention due to error: {str(e)}",
-        #         # "all_subtasks": [f"Complete the task: {self.user_goal}"],
-        #         # "current_step_index": 0,
-        #         # "total_subtasks": 1,
-        #         # "task_decomposed": False
-        #     }
-        #     current_intention = planning_result["intention"]
-        #     self.intentions.append(current_intention)
-        #     current_subtask = planning_result["current_subtask"]
-        #     all_subtasks = planning_result["all_subtasks"]
-
-        #     # Log planner agent error summary
-        #     error_response = {
-        #         "error": str(e),
-        #         "intention": planning_result["intention"],
-        #         "current_subtask": planning_result["current_subtask"],
-        #         "next_atomic_action": planning_result["next_atomic_action"],
-        #         "reasoning": planning_result["reasoning"],
-        #         "task_decomposed": planning_result["task_decomposed"]
-        #     }
 
         # 3. Actor Agent executes intention
         print("🎬 Actor Agent: Executing intention...")
         current_intention = self.user_goal
+        execution_result = None
+        info = None
         try:
             # Merge step_number into meta_data while preserving action_history
             # This matches the pattern used in run.py
@@ -586,6 +498,16 @@ class MultiAgentCoordinator:
             meta_data_for_action["step_number"] = step_number
             # Add context information from context_agent instead of using action_history as previous_action
             meta_data_for_action["context_summary"] = context_result.get("summary", "No context available")
+
+            # Add pattern issue analysis results from previous reflection to help actor agent avoid repetitive errors
+            # Use the latest reflection if available
+            latest_reflection = self.reflections[-1] if self.reflections else None
+            if latest_reflection:
+                checklist = latest_reflection.get("checklist", {})
+                pattern_issue_analysis = checklist.get("pattern_issue_analysis")
+                if pattern_issue_analysis and pattern_issue_analysis.get("pattern_confirmed", False):
+                    meta_data_for_action["pattern_issue_analysis"] = pattern_issue_analysis
+                    print(f"🎬 Actor: Pattern issue analysis from previous step provided to guide action selection")
             
             # Ensure current_observation has text, image, and image_raw fields
             current_obs = self.current_observation or {"text": "", "image": None, "image_raw": None}
@@ -689,6 +611,8 @@ class MultiAgentCoordinator:
                 self.context_agent.update_state(
                     latest_intention=extracted_intention
                 )
+                # Update intentions history for pattern detection
+                self.intentions.append(extracted_intention)
 
             # Log actor agent response summary with full LLM response
             actor_response = {
@@ -717,7 +641,7 @@ class MultiAgentCoordinator:
             llm_response = "No LLM response available due to exception"
 
             # Try to get LLM response from execution_result if available
-            if 'execution_result' in dir() and hasattr(execution_result, 'get'):
+            if execution_result is not None:
                 if execution_result.get("llm_response"):
                     llm_response = execution_result.get("llm_response")
                 elif execution_result.get("response"):
@@ -806,15 +730,25 @@ class MultiAgentCoordinator:
         checklist = reflection_result.get("checklist", {})
         print(f"📋 Reflector Checklist:")
         print(f"   - Pattern Issue: {checklist.get('has_pattern_issue', False)}")
-        print(f"   - Execution Success: {checklist.get('execution_successful', True)}")
         print(f"   - Task Completed: {checklist.get('task_completed', False)}")
+
+        # Show pattern issue analysis if available
+        pattern_issue_analysis = checklist.get("pattern_issue_analysis")
+        if pattern_issue_analysis and pattern_issue_analysis.get("pattern_confirmed", False):
+            print(f"   - Pattern Confirmed: {pattern_issue_analysis.get('pattern_confirmed', False)}")
+            prohibited = pattern_issue_analysis.get("prohibited_actions", [])
+            alternatives = pattern_issue_analysis.get("alternative_actions", [])
+            if prohibited:
+                print(f"   - Prohibited Actions: {len(prohibited)} items")
+            if alternatives:
+                print(f"   - Alternative Actions: {len(alternatives)} items")
 
         # Log reflector agent response summary with checklist format
         reflector_response = {
-            "has_pattern_issue": reflection_result.get("has_pattern_issue", False),
-            "execution_successful": reflection_result.get("execution_successful", True),
-            "task_completed": reflection_result.get("task_completed", False),
+            "has_pattern_issue": checklist.get("has_pattern_issue", False),
+            "task_completed": checklist.get("task_completed", False),
             "raw_response": checklist.get("raw_response", ""),
+            "pattern_issue_analysis": pattern_issue_analysis,
         }
         self.log_agent_response("reflector_agent", step_number, reflector_response)
 
@@ -839,14 +773,8 @@ class MultiAgentCoordinator:
                 "new_observation": new_observation,
             }
 
-        # 7. Record workflow step
-        self.workflow_manager.record_execution_step(
-            step_number=step_number,
-            intention=current_intention,
-            action=executed_action,
-            observation=new_observation,
-            reflection=reflection_result
-        )
+        # 7. Update current step
+        self.current_step = step_number
 
         return {
             "should_terminate": False,
@@ -881,7 +809,6 @@ class MultiAgentCoordinator:
             if isinstance(text, list):
                 # Decode text from ID list if needed
                 try:
-                    from browser_env.actions import _id2key
                     stop_data["answer"] = ''.join(_id2key[id_num] if 0 <= id_num < len(_id2key) else '?' for id_num in text)
                 except (ImportError, IndexError):
                     stop_data["answer"] = ''.join(chr(id_num) if 32 <= id_num <= 126 else '?' for id_num in text)
@@ -915,12 +842,11 @@ class MultiAgentCoordinator:
         
         # Reset all sub-agents
         self.context_agent.reset()
-        self.planner_agent.reset_planning_state()
         self.actor_agent.reset_intention_history()
         self.reflector_agent.reset_reflection_history()
         
         # Reset coordination components
-        self.workflow_manager.reset_workflow()
+        self.current_step = 0
         
         # Reset logging for new task
         self._setup_logging()

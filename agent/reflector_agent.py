@@ -13,6 +13,7 @@ from browser_env.utils import Observation
 from llms import lm_config
 
 from .reflector.checklist_analyzer import ChecklistAnalyzer
+from .reflector.pattern_issue_analyzer import PatternIssueAnalyzer
 
 
 class ReflectorAgent:
@@ -20,13 +21,15 @@ class ReflectorAgent:
 
     Performs structured validation through key checks:
     1. Pattern Check: Detect repetitive or erroneous patterns in recent intents
-    2. Execution Check: Verify if the latest action executed successfully
-    3. Task Completion Check: Check if the overall task is completed
+    2. Task Completion Check: Check if the overall task is completed
+
+    Output includes recent intentions, actions, and current screenshot.
     """
 
     def __init__(self, lm_config: lm_config.LMConfig) -> None:
         self.lm_config = lm_config
         self.checklist_analyzer = ChecklistAnalyzer(lm_config)
+        self.pattern_issue_analyzer = PatternIssueAnalyzer(lm_config)
 
         # Reflection history
         self.reflection_history: List[Dict[str, Any]] = []
@@ -60,6 +63,7 @@ class ReflectorAgent:
         try:
             # Prepare inputs for checklist
             recent_intents = intentions[-5:] if intentions else []
+            recent_actions = actions[-5:] if actions else []
             image_before, image_after = self._extract_before_after_images(
                 trajectory, current_observation
             )
@@ -67,22 +71,55 @@ class ReflectorAgent:
             # Run unified checklist analysis
             checklist_result = self.checklist_analyzer.analyze(
                 recent_intents=recent_intents,
+                recent_actions=recent_actions,
                 image_before=image_before,
                 image_after=image_after,
                 latest_action=latest_action,
                 high_level_task=high_level_task or context_summary.get("summary", ""),
             )
 
-            # Build reflection result
+            # Initialize pattern issue analysis result
+            pattern_issue_analysis = None
+
+            # If pattern issue is detected, perform detailed analysis
+            if checklist_result.get("has_pattern_issue", False):
+                try:
+                    pattern_issue_analysis = self.pattern_issue_analyzer.analyze_pattern_issue(
+                        recent_intents=recent_intents,
+                        recent_actions=recent_actions,
+                        current_intention=current_intention,
+                        latest_action=latest_action,
+                        high_level_task=high_level_task or context_summary.get("summary", ""),
+                        checklist_raw_response=checklist_result.get("raw_response", ""),
+                    )
+                except Exception as e:
+                    print(f"Pattern issue detailed analysis failed: {e}")
+                    pattern_issue_analysis = {
+                        "pattern_confirmed": False,
+                        "pattern_description": "",
+                        "prohibited_actions": [],
+                        "alternative_actions": [],
+                        "correction_guidance": "",
+                        "analysis_successful": False,
+                        "raw_response": f"Error: {e}",
+                    }
+
+            # Build reflection result - only include recent intentions, actions, and current screenshot
             reflection = {
-                "checklist": checklist_result,
-                "has_pattern_issue": checklist_result.get("has_pattern_issue", False),
-                "execution_successful": checklist_result.get("execution_successful", True),
-                "task_completed": checklist_result.get("task_completed", False),
-                "current_intention": current_intention,
-                "latest_action": latest_action,
+                "recent_intentions": recent_intents,
+                "recent_actions": recent_actions,
+                "current_screenshot": image_after,
+                "checklist": {
+                    "has_pattern_issue": checklist_result.get("has_pattern_issue", False),
+                    "task_completed": checklist_result.get("task_completed", False),
+                    "raw_response": checklist_result.get("raw_response", ""),
+                },
                 "reflection_number": len(self.reflection_history) + 1,
             }
+
+            # Add pattern issue analysis if it was performed
+            if pattern_issue_analysis is not None:
+                reflection["checklist"]["pattern_issue_analysis"] = pattern_issue_analysis
 
             # Store in reflection history
             self.reflection_history.append(reflection)
@@ -92,16 +129,13 @@ class ReflectorAgent:
         except Exception as e:
             # Create error reflection with safe defaults
             error_reflection = {
+                "recent_intentions": recent_intents,
+                "recent_actions": recent_actions,
+                "current_screenshot": image_after,
                 "checklist": {
                     "has_pattern_issue": False,
-                    "execution_successful": False,
                     "task_completed": False,
                 },
-                "has_pattern_issue": False,
-                "execution_successful": False,
-                "task_completed": False,
-                "current_intention": current_intention,
-                "latest_action": latest_action,
                 "reflection_number": len(self.reflection_history) + 1,
                 "error": str(e),
             }

@@ -25,8 +25,7 @@ class ChecklistAnalyzer:
 
     Evaluates key checks:
     1. Pattern Check: Detect repetitive or erroneous patterns in recent intents
-    2. Execution Check: Verify if the latest action executed successfully
-    3. Task Completion Check: Check if the overall task is completed
+    2. Task Completion Check: Check if the overall task is completed
     """
 
     def __init__(self, lm_config: lm_config.LMConfig) -> None:
@@ -36,6 +35,7 @@ class ChecklistAnalyzer:
     def analyze(
         self,
         recent_intents: List[str],
+        recent_actions: List[Action],
         image_before: Optional[np.ndarray],
         image_after: Optional[np.ndarray],
         latest_action: Action,
@@ -45,6 +45,7 @@ class ChecklistAnalyzer:
 
         Args:
             recent_intents: Last 5 action intents
+            recent_actions: Last 5 executed actions
             image_before: Screenshot before action
             image_after: Screenshot after action
             latest_action: The executed action
@@ -63,6 +64,7 @@ class ChecklistAnalyzer:
             try:
                 messages = self._build_multimodal_prompt(
                     recent_intents=recent_intents,
+                    recent_actions=recent_actions,
                     image_before=image_before,
                     image_after=image_after,
                     action_type=action_type,
@@ -80,6 +82,7 @@ class ChecklistAnalyzer:
         # Fallback to text-only analysis
         return self._analyze_text_only(
             recent_intents=recent_intents,
+            recent_actions=recent_actions,
             action_type=action_type,
             element_id=element_id,
             action_text=action_text,
@@ -89,6 +92,7 @@ class ChecklistAnalyzer:
     def _build_multimodal_prompt(
         self,
         recent_intents: List[str],
+        recent_actions: List[Action],
         image_before: np.ndarray,
         image_after: np.ndarray,
         action_type: str,
@@ -113,11 +117,17 @@ class ChecklistAnalyzer:
         if not intents_str:
             intents_str = "No previous intents"
 
+        # Format recent actions
+        actions_str = "\n".join([f"{i+1}. {self._format_action(action)}" for i, action in enumerate(recent_actions)])
+        if not actions_str:
+            actions_str = "No previous actions"
+
         # Load prompt template
         prompt_text = load_prompt_template(
             "reflector_agent",
             "reflection_checklist",
             recent_intents=intents_str,
+            recent_actions=actions_str,
             action_type=action_type,
             element_id=element_id,
             action_text=action_text,
@@ -144,6 +154,7 @@ class ChecklistAnalyzer:
     def _analyze_text_only(
         self,
         recent_intents: List[str],
+        recent_actions: List[Action],
         action_type: str,
         element_id: str,
         action_text: str,
@@ -155,11 +166,17 @@ class ChecklistAnalyzer:
         if not intents_str:
             intents_str = "No previous intents"
 
+        # Format recent actions
+        actions_str = "\n".join([f"{i+1}. {self._format_action(action)}" for i, action in enumerate(recent_actions)])
+        if not actions_str:
+            actions_str = "No previous actions"
+
         # Load text-only prompt template
         prompt_text = load_prompt_template(
             "reflector_agent",
             "reflection_checklist_text",
             recent_intents=intents_str,
+            recent_actions=actions_str,
             action_type=action_type,
             element_id=element_id,
             action_text=action_text,
@@ -200,8 +217,6 @@ class ChecklistAnalyzer:
                 # Extract boolean values with type conversion
                 if "has_pattern_issue" in parsed:
                     result["has_pattern_issue"] = self._to_bool(parsed["has_pattern_issue"])
-                if "execution_successful" in parsed:
-                    result["execution_successful"] = self._to_bool(parsed["execution_successful"])
                 if "task_completed" in parsed:
                     result["task_completed"] = self._to_bool(parsed["task_completed"])
 
@@ -226,12 +241,6 @@ class ChecklistAnalyzer:
         elif "repetitive" in response_lower and "detected" in response_lower:
             result["has_pattern_issue"] = True
 
-        # Execution success detection
-        if "execution_successful: false" in response_lower or "execution failed" in response_lower:
-            result["execution_successful"] = False
-        elif "successfully" in response_lower or "execution_successful: true" in response_lower:
-            result["execution_successful"] = True
-
         # Task completion detection
         if "task_completed: true" in response_lower or "task is complete" in response_lower:
             result["task_completed"] = True
@@ -242,7 +251,6 @@ class ChecklistAnalyzer:
         """Get default checklist result."""
         return {
             "has_pattern_issue": False,
-            "execution_successful": True,
             "task_completed": False,
         }
 
@@ -266,3 +274,20 @@ class ChecklistAnalyzer:
             except (ImportError, IndexError):
                 return ''.join(chr(id_num) if 32 <= id_num <= 126 else '?' for id_num in text_ids)
         return "N/A"
+
+    def _format_action(self, action: Action) -> str:
+        """Format an action object into a readable string."""
+        if not action or not isinstance(action, dict):
+            return "Invalid action"
+
+        action_type = action.get("action_type", "UNKNOWN")
+        element_id = action.get("element_id", "N/A")
+        action_text = self._decode_action_text(action)
+
+        formatted_parts = [f"Type: {action_type}"]
+        if element_id != "N/A":
+            formatted_parts.append(f"Element: {element_id}")
+        if action_text != "N/A":
+            formatted_parts.append(f"Text: '{action_text}'")
+
+        return ", ".join(formatted_parts)

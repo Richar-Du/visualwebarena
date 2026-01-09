@@ -33,6 +33,8 @@ class BrowserActionExecutor:
         meta_data: Dict[str, Any],
         images: Optional[list[Image.Image]] = None,
     ) -> Dict[str, Any]:
+        # Extract pattern issue analysis from meta_data if available
+        pattern_issue_analysis = meta_data.get("pattern_issue_analysis")
         """Generate browser action for the given intention.
 
         Args:
@@ -85,6 +87,7 @@ class BrowserActionExecutor:
                     context=context_summary,
                     current_image=current_image,
                     input_images=images,
+                    pattern_issue_analysis=pattern_issue_analysis,
                 )
             except Exception as e:
                 print(f"Multimodal action execution failed: {e}, falling back to text-only")
@@ -93,6 +96,7 @@ class BrowserActionExecutor:
                     observation=obs,
                     url=url,
                     context=context_summary,
+                    pattern_issue_analysis=pattern_issue_analysis,
                 )
         else:
             # Fallback to text-only
@@ -101,6 +105,7 @@ class BrowserActionExecutor:
                 observation=obs,
                 url=url,
                 context=context_summary,
+                pattern_issue_analysis=pattern_issue_analysis,
             )
 
         # Parse the action from the response
@@ -131,6 +136,7 @@ class BrowserActionExecutor:
         context: str,
         current_image: np.ndarray,
         input_images: Optional[list[Image.Image]] = None,
+        pattern_issue_analysis: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Execute action generation using multimodal (image + text) input."""
         # Convert numpy array to PIL Image
@@ -138,6 +144,22 @@ class BrowserActionExecutor:
             pil_image = Image.fromarray(current_image)
         else:
             pil_image = current_image
+
+        # Prepare pattern issue guidance if available
+        pattern_guidance = ""
+        if pattern_issue_analysis and pattern_issue_analysis.get("pattern_confirmed", False):
+            prohibited = pattern_issue_analysis.get("prohibited_actions", [])
+            alternatives = pattern_issue_analysis.get("alternative_actions", [])
+            guidance = pattern_issue_analysis.get("correction_guidance", "")
+
+            pattern_guidance = "\n\n=== IMPORTANT: AVOID REPETITIVE PATTERNS ===\n"
+            if prohibited:
+                pattern_guidance += f"PROHIBITED ACTIONS (avoid these): {', '.join(prohibited)}\n"
+            if alternatives:
+                pattern_guidance += f"SUGGESTED ALTERNATIVES (try these): {', '.join(alternatives)}\n"
+            if guidance:
+                pattern_guidance += f"GENERAL GUIDANCE: {guidance}\n"
+            pattern_guidance += "CRITICAL: Do NOT repeat the same actions that led to getting stuck. Try different approaches."
 
         # Load prompt template from the new system
         prompt_text = load_prompt_template(
@@ -148,6 +170,10 @@ class BrowserActionExecutor:
             objective=intention,
             context=context,
         )
+
+        # Append pattern guidance to the prompt
+        if pattern_guidance:
+            prompt_text += pattern_guidance
 
         # Build multimodal message
         content = [
@@ -183,8 +209,25 @@ class BrowserActionExecutor:
         observation: str,
         url: str,
         context: str,
+        pattern_issue_analysis: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Fallback text-only action generation."""
+        # Prepare pattern issue guidance if available
+        pattern_guidance = ""
+        if pattern_issue_analysis and pattern_issue_analysis.get("pattern_confirmed", False):
+            prohibited = pattern_issue_analysis.get("prohibited_actions", [])
+            alternatives = pattern_issue_analysis.get("alternative_actions", [])
+            guidance = pattern_issue_analysis.get("correction_guidance", "")
+
+            pattern_guidance = "\n\n=== IMPORTANT: AVOID REPETITIVE PATTERNS ===\n"
+            if prohibited:
+                pattern_guidance += f"PROHIBITED ACTIONS (avoid these): {', '.join(prohibited)}\n"
+            if alternatives:
+                pattern_guidance += f"SUGGESTED ALTERNATIVES (try these): {', '.join(alternatives)}\n"
+            if guidance:
+                pattern_guidance += f"GENERAL GUIDANCE: {guidance}\n"
+            pattern_guidance += "CRITICAL: Do NOT repeat the same actions that led to getting stuck. Try different approaches."
+
         # Load text-only prompt template
         prompt = load_prompt_template(
             "actor_agent",
@@ -194,6 +237,10 @@ class BrowserActionExecutor:
             objective=intention,
             context=context,
         )
+
+        # Append pattern guidance to the prompt
+        if pattern_guidance:
+            prompt += pattern_guidance
 
         response = call_llm(
             self.lm_config, [{"role": "user", "content": prompt}]
