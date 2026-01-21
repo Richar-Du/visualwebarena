@@ -46,6 +46,7 @@ class ActorAgent:
         trajectory: Trajectory,
         meta_data: Optional[Dict[str, Any]] = None,
         images: Optional[List[Image.Image]] = None,
+        monitor_feedback: Optional[str] = None,  # NEW: Monitor feedback injection
     ) -> Dict[str, Any]:
         """Execute a high-level intention and generate specific actions.
 
@@ -55,21 +56,31 @@ class ActorAgent:
             trajectory: Current execution trajectory
             meta_data: Additional metadata for execution
             images: Optional input images (not used, kept for compatibility)
+            monitor_feedback: Optional feedback from Monitor to inject into prompt
 
         Returns:
             Dictionary containing execution results
         """
+        # Inject monitor feedback into intention if present
+        effective_intention = intention
+        if monitor_feedback:
+            # Prepend monitor feedback to intention for Actor to consider
+            effective_intention = f"{monitor_feedback}\n\nTask: {intention}"
+        
         # Record intention execution attempt
         execution_record = {
             "intention": intention,
+            "effective_intention": effective_intention,
+            "monitor_feedback": monitor_feedback,
             "timestamp": None,  # Would be set in actual implementation
             "observation_before": current_observation,
         }
 
         try:
             # Use the new BrowserActionExecutor to generate action
+            # Pass effective_intention which includes monitor feedback if present
             result = self.browser_action_executor.execute_action(
-                intention=intention,
+                intention=effective_intention,
                 trajectory=trajectory,
                 meta_data=meta_data or {},
                 images=images,

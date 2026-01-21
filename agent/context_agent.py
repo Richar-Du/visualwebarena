@@ -42,7 +42,19 @@ class ContextAgent:
             )
             self.memory_generator = MemoryGenerator(lm_config)
             self.window_size = memory_config.get('window_size', 3)
+        
+        self.url_history: List[str] = []
+        self.last_url: str = ""
+        self.page_changed_since_action: bool = False
 
+    def reset(self) -> None:
+        """Reset context agent state for a new task."""
+        self.state_manager = StateManager()
+        self.current_summary = None
+        self.memory_content = ""
+        self.url_history: List[str] = []
+        self.last_url: str = ""
+        self.page_changed_since_action: bool = False
 
     def update_state(self,
         current_observation: Optional[Observation] = None,
@@ -71,6 +83,7 @@ class ContextAgent:
         latest_intention: Optional[str] = None,
         latest_action: Optional[Action] = None,
         latest_reflection: Optional[Dict[str, Any]] = None,
+        current_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Update context state and generate comprehensive summary.
 
@@ -81,12 +94,25 @@ class ContextAgent:
             latest_intention: Most recent intention
             latest_action: Most recent action taken
             latest_reflection: Most recent reflection from Reflector Agent
+            current_url: Current page URL for state tracking
 
         Returns:
             Dictionary containing updated context information
         """
         # Use data from Coordinator if provided, otherwise extract from trajectory
         self.update_state(current_observation, latest_intention, latest_action, latest_reflection)
+
+        # URL change detection
+        url_changed = False
+        url_change_info = ""
+        if current_url:
+            if self.last_url and current_url != self.last_url:
+                url_changed = True
+                self.page_changed_since_action = True
+                url_change_info = f"[PAGE CHANGED] URL changed from '{self._truncate_url(self.last_url)}' to '{self._truncate_url(current_url)}'"
+                print(f"🔄 {url_change_info}")
+            self.url_history.append(current_url)
+            self.last_url = current_url
 
         observations = self.state_manager.get_all_observations()
         actions = self.state_manager.get_all_actions()
@@ -101,6 +127,11 @@ class ContextAgent:
             actions=actions,
             intentions=intentions,
         )
+        
+        # Prepend URL change info to summary if page changed
+        if url_changed and url_change_info:
+            summary = f"{url_change_info}\n{summary}"
+        
         self.current_summary = summary
 
 
@@ -120,7 +151,18 @@ class ContextAgent:
             "latest_observation": current_observation,
             "latest_intention": latest_intention,
             "latest_action": latest_action,
+            # URL tracking info
+            "url_changed": url_changed,
+            "current_url": current_url,
+            "url_history": self.url_history[-5:],  # Last 5 URLs
         }
+    
+    def _truncate_url(self, url: str, max_length: int = 60) -> str:
+        """Truncate URL for display."""
+        if len(url) <= max_length:
+            return url
+        return url[:max_length] + "..."
+
     
     def _extract_observations_from_trajectory(self, trajectory: Trajectory) -> List[Observation]:
         """Extract observations from trajectory (fallback method)."""

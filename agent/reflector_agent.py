@@ -34,6 +34,10 @@ class ReflectorAgent:
         # Reflection history
         self.reflection_history: List[Dict[str, Any]] = []
 
+    def reset_reflection_history(self) -> None:
+        """Reset reflection history for a new task."""
+        self.reflection_history.clear()
+
     def reflect_execution(
         self,
         trajectory: Trajectory,

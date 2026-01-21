@@ -288,7 +288,7 @@ def test(args, config_file):
     if not instruction_path:
         # Select default instruction path based on observation type and model
         if is_multimodal_model and is_image_observation:
-            instruction_path = 'agent/prompts/jsons/p_som_cot_id_actree_0s.json'
+            instruction_path = 'agent/prompts/jsons/p_som_cot_id_actree_3s.json'
         else:
             instruction_path = 'agent/prompts/jsons/p_cot_id_actree_3s.json'
 
@@ -333,7 +333,8 @@ def test(args, config_file):
                                         base_agent,
                                         browser_env=env,
                                         result_dir=result_dir,
-                                        memory_config=config.get('memory', {}))
+                                        memory_config=config.get('memory', {}),
+                                        monitor_config=config.get('monitor', {}))
 
     # Load input images for the task, if any.
     image_paths = config.get('task', {}).get('image', None)
@@ -360,12 +361,20 @@ def test(args, config_file):
     initial_obs, initial_info = env.reset(options=reset_options if reset_options else None)
     initial_observation = {"observation": initial_obs, "info": initial_info}
 
-    result = coordinator.execute_task(
-        user_goal=config.get('task', {}).get('intent', 'Not specified'),
-        start_observation=initial_observation,
-        max_steps=config.get('task', {}).get('max_steps', 3),
-        images=images if images else None
-    )
+    try:
+        result = coordinator.execute_task(
+            user_goal=config.get('task', {}).get('intent', 'Not specified'),
+            start_observation=initial_observation,
+            max_steps=config.get('task', {}).get('max_steps', 3),
+            images=images if images else None
+        )
+    finally:
+        # Properly close browser environment to prevent EPIPE errors
+        try:
+            env.close()
+            print("🔒 Browser environment closed")
+        except Exception as e:
+            print(f"⚠️ Error closing browser environment: {e}")
 
     # Return the execution result
     return result

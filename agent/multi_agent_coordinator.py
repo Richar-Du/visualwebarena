@@ -35,6 +35,7 @@ ObservationTypeAlias = ObservationType
 from .context_agent import ContextAgent
 from .actor_agent import ActorAgent
 from .reflector_agent import ReflectorAgent
+from .monitor import GeneralMonitor
 
 
 class MultiAgentCoordinator:
@@ -55,6 +56,7 @@ class MultiAgentCoordinator:
                  browser_env=None,
                  result_dir: str = "results",
                  memory_config: Dict[str, Any]= {},
+                 monitor_config: Dict[str, Any] = {},
                  clear_result_dir: bool = False,
                  save_images: bool = True) -> None:
         self.lm_config = lm_config
@@ -65,6 +67,9 @@ class MultiAgentCoordinator:
         self.enable_memory = memory_config.get("enable_memory", False)
         self.enable_memory_store = memory_config.get("enable_memory_store", False)
 
+        # Monitor configuration
+        self.enable_monitor = monitor_config.get("enable_monitor", False)
+        
         # Output configuration
         self.clear_result_dir = clear_result_dir
         self.save_images = save_images
@@ -79,6 +84,17 @@ class MultiAgentCoordinator:
         )
         self.reflector_agent = ReflectorAgent(lm_config)
 
+        # Initialize GeneralMonitor if enabled (NEW)
+        self.monitor: Optional[GeneralMonitor] = None
+        if self.enable_monitor:
+            self.monitor = GeneralMonitor(
+                lm_config=lm_config,
+                memory_config=memory_config,
+                consecutive_error_threshold=monitor_config.get("consecutive_error_threshold", 3),
+                repetition_window=monitor_config.get("repetition_window", 5),
+                max_same_action_count=monitor_config.get("max_same_action_count", 3),
+            )
+            print("🔍 GeneralMonitor enabled")
 
         # Browser environment for action execution
         self.browser_env = browser_env
@@ -96,6 +112,9 @@ class MultiAgentCoordinator:
         self.intentions: List[str] = []
         self.actions: List[Action] = []
         self.reflections: List[Dict[str, Any]] = []
+        
+        # Monitor feedback storage
+        self.monitor_feedback: Optional[str] = None
 
         # Meta data for action history tracking (required by DirectPromptConstructor)
         # Initialize with "None" as the first action, matching run.py implementation
@@ -230,8 +249,12 @@ class MultiAgentCoordinator:
         # Initialize workflow and monitoring
         self.current_step = 0
 
-
-
+        # Initialize GeneralMonitor if enabled
+        if self.enable_monitor and self.monitor:
+            print("🔍 Initializing GeneralMonitor for task...")
+            self.monitor.initialize(user_goal)
+            self.monitor_feedback = None
+        
         if self.enable_memory:
             # Initialize memory system for this task
             print("🧠 Initializing memory system...")
@@ -443,6 +466,14 @@ class MultiAgentCoordinator:
         # 1. Context Agent updates context
         print("🧠 Context Agent: Updating context...")
         try:
+            # Extract current URL from trajectory info
+            current_url = None
+            if self.trajectory and len(self.trajectory) >= 1:
+                last_state = self.trajectory[-1]
+                if isinstance(last_state, dict) and "info" in last_state:
+                    info = last_state["info"]
+                    if info and hasattr(info.get("page"), "url"):
+                        current_url = info["page"].url
             
             context_result = self.context_agent.update_context(
                 trajectory=self.trajectory,
@@ -451,6 +482,7 @@ class MultiAgentCoordinator:
                 latest_intention=self.intentions[-1] if self.intentions else None,
                 latest_action=self.actions[-1] if self.actions else None,
                 latest_reflection=self.reflections[-1] if self.reflections else None,
+                current_url=current_url,
             )
             # Show only key context information
             summary = context_result.get("summary", "No summary")
@@ -525,6 +557,7 @@ class MultiAgentCoordinator:
                 trajectory=self.trajectory,
                 meta_data=meta_data_for_action,
                 images=images,
+                monitor_feedback=self.monitor_feedback,  # Inject Monitor feedback
             )
             
             # Check if execution was successful and contains action
@@ -712,66 +745,139 @@ class MultiAgentCoordinator:
 
         self.meta_data["action_history"].append(action_str)
 
-        # 5. Reflector Agent reflects on execution with checklist approach
-        reflection_result = self.reflector_agent.reflect_execution(
-            trajectory=self.trajectory,
-            intentions=self.intentions,
-            actions=self.actions,
-            current_intention=current_intention,
-            latest_action=executed_action,
-            current_observation=new_observation,
-            context_summary=context_result,
-            high_level_task=self.user_goal,
-        )
-
-        self.reflections.append(reflection_result)
-
-        # Show checklist results
-        checklist = reflection_result.get("checklist", {})
-        print(f"📋 Reflector Checklist:")
-        print(f"   - Pattern Issue: {checklist.get('has_pattern_issue', False)}")
-        print(f"   - Task Completed: {checklist.get('task_completed', False)}")
-
-        # Show pattern issue analysis if available
-        pattern_issue_analysis = checklist.get("pattern_issue_analysis")
-        if pattern_issue_analysis and pattern_issue_analysis.get("pattern_confirmed", False):
-            print(f"   - Pattern Confirmed: {pattern_issue_analysis.get('pattern_confirmed', False)}")
-            prohibited = pattern_issue_analysis.get("prohibited_actions", [])
-            alternatives = pattern_issue_analysis.get("alternative_actions", [])
-            if prohibited:
-                print(f"   - Prohibited Actions: {len(prohibited)} items")
-            if alternatives:
-                print(f"   - Alternative Actions: {len(alternatives)} items")
-
-        # Log reflector agent response summary with checklist format
-        reflector_response = {
-            "has_pattern_issue": checklist.get("has_pattern_issue", False),
-            "task_completed": checklist.get("task_completed", False),
-            "raw_response": checklist.get("raw_response", ""),
-            "pattern_issue_analysis": pattern_issue_analysis,
-        }
-        self.log_agent_response("reflector_agent", step_number, reflector_response)
-
-        # 6. Handle task completion based on reflection results
-
-        # Check for task completion with STOP action (OR logic)
-        task_completed = reflection_result.get("task_completed", False)
-        is_stop_action = executed_action.get("action_type") == ActionTypes.STOP
-
-        if task_completed or is_stop_action:
-            completion_reason = "Task completed by Reflector Agent" if task_completed and not is_stop_action else \
-                              "Task completed with STOP action" if is_stop_action and not task_completed else \
-                              "Task completed by both Reflector Agent and STOP action"
-            print(f"🎉 {completion_reason}!")
-            return {
-                "should_terminate": True,
-                "termination_reason": completion_reason,
-                "step_number": step_number,
-                "context_result": context_result,
-                "execution_result": execution_result,
-                "reflection_result": reflection_result,
-                "new_observation": new_observation,
+        # 5. Post-action processing: Monitor Mode vs Baseline Mode
+        # ============================================================
+        
+        if self.enable_monitor and self.monitor:
+            # === MODE A: Monitor Mode  ===
+            # Monitor internally handles Context update and Reflector check
+            print("🔍 Monitor: Processing action...")
+            
+            monitor_feedback, should_stop = self.monitor.step(
+                action=executed_action,
+                observation=new_observation,
+                trajectory=self.trajectory,
+                intention=current_intention,
+            )
+            
+            # Store monitor feedback for next Actor call
+            self.monitor_feedback = monitor_feedback.to_prompt_injection()
+            
+            # Log monitor decision
+            print(f"🔍 Monitor Decision: {monitor_feedback.decision.value}")
+            if monitor_feedback.detected_issues:
+                print(f"   - Issues: {', '.join(monitor_feedback.detected_issues[:2])}")
+            if monitor_feedback.severity > 0:
+                print(f"   - Severity: {monitor_feedback.severity}/10")
+            
+            # Create reflection result from monitor feedback for compatibility
+            reflection_result = {
+                "checklist": {
+                    "has_pattern_issue": monitor_feedback.decision.value in ["warn", "rollback"],
+                    "task_completed": should_stop and monitor_feedback.message == "Task completed successfully",
+                },
+                "monitor_feedback": {
+                    "decision": monitor_feedback.decision.value,
+                    "message": monitor_feedback.message,
+                    "severity": monitor_feedback.severity,
+                    "detected_issues": monitor_feedback.detected_issues,
+                    "suggested_actions": monitor_feedback.suggested_actions,
+                },
             }
+            self.reflections.append(reflection_result)
+            
+            # Log monitor response
+            self.log_agent_response("monitor", step_number, {
+                "decision": monitor_feedback.decision.value,
+                "message": monitor_feedback.message,
+                "severity": monitor_feedback.severity,
+                "issues": monitor_feedback.detected_issues,
+                "prompt_injection": self.monitor_feedback[:200] if self.monitor_feedback else "",
+            })
+            
+            # Check for task completion
+            task_completed = should_stop
+            is_stop_action = executed_action.get("action_type") == ActionTypes.STOP
+            
+            if task_completed or is_stop_action:
+                completion_reason = "Monitor detected task completion" if task_completed and not is_stop_action else \
+                                  "Task completed with STOP action" if is_stop_action and not task_completed else \
+                                  "Task completed (Monitor + STOP action)"
+                print(f"🎉 {completion_reason}!")
+                return {
+                    "should_terminate": True,
+                    "termination_reason": completion_reason,
+                    "step_number": step_number,
+                    "context_result": context_result,
+                    "execution_result": execution_result,
+                    "reflection_result": reflection_result,
+                    "new_observation": new_observation,
+                    "monitor_feedback": self.monitor_feedback,
+                }
+        
+        else:
+            # === MODE B: Baseline Mode (Original) ===
+            # Traditional Reflector-based reflection
+            reflection_result = self.reflector_agent.reflect_execution(
+                trajectory=self.trajectory,
+                intentions=self.intentions,
+                actions=self.actions,
+                current_intention=current_intention,
+                latest_action=executed_action,
+                current_observation=new_observation,
+                context_summary=context_result,
+                high_level_task=self.user_goal,
+            )
+
+            self.reflections.append(reflection_result)
+            
+            # Clear monitor feedback in baseline mode
+            self.monitor_feedback = None
+
+            # Show checklist results
+            checklist = reflection_result.get("checklist", {})
+            print(f"📋 Reflector Checklist:")
+            print(f"   - Pattern Issue: {checklist.get('has_pattern_issue', False)}")
+            print(f"   - Task Completed: {checklist.get('task_completed', False)}")
+
+            # Show pattern issue analysis if available
+            pattern_issue_analysis = checklist.get("pattern_issue_analysis")
+            if pattern_issue_analysis and pattern_issue_analysis.get("pattern_confirmed", False):
+                print(f"   - Pattern Confirmed: {pattern_issue_analysis.get('pattern_confirmed', False)}")
+                prohibited = pattern_issue_analysis.get("prohibited_actions", [])
+                alternatives = pattern_issue_analysis.get("alternative_actions", [])
+                if prohibited:
+                    print(f"   - Prohibited Actions: {len(prohibited)} items")
+                if alternatives:
+                    print(f"   - Alternative Actions: {len(alternatives)} items")
+
+            # Log reflector agent response summary with checklist format
+            reflector_response = {
+                "has_pattern_issue": checklist.get("has_pattern_issue", False),
+                "task_completed": checklist.get("task_completed", False),
+                "raw_response": checklist.get("raw_response", ""),
+                "pattern_issue_analysis": pattern_issue_analysis,
+            }
+            self.log_agent_response("reflector_agent", step_number, reflector_response)
+
+            # 6. Handle task completion based on reflection results
+            task_completed = reflection_result.get("task_completed", False)
+            is_stop_action = executed_action.get("action_type") == ActionTypes.STOP
+
+            if task_completed or is_stop_action:
+                completion_reason = "Task completed by Reflector Agent" if task_completed and not is_stop_action else \
+                                  "Task completed with STOP action" if is_stop_action and not task_completed else \
+                                  "Task completed by both Reflector Agent and STOP action"
+                print(f"🎉 {completion_reason}!")
+                return {
+                    "should_terminate": True,
+                    "termination_reason": completion_reason,
+                    "step_number": step_number,
+                    "context_result": context_result,
+                    "execution_result": execution_result,
+                    "reflection_result": reflection_result,
+                    "new_observation": new_observation,
+                }
 
         # 7. Update current step
         self.current_step = step_number
@@ -783,6 +889,7 @@ class MultiAgentCoordinator:
             "execution_result": execution_result,
             "reflection_result": reflection_result,
             "new_observation": new_observation,
+            "monitor_feedback": self.monitor_feedback if self.enable_monitor else None,
         }
 
     def _extract_stop_action_data(self, action: Action) -> Dict[str, Any]:
