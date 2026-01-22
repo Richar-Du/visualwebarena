@@ -36,6 +36,7 @@ from .context_agent import ContextAgent
 from .actor_agent import ActorAgent
 from .reflector_agent import ReflectorAgent
 from .monitor import GeneralMonitor
+from .trajectory_logger import TrajectoryLogger
 
 
 class MultiAgentCoordinator:
@@ -95,6 +96,8 @@ class MultiAgentCoordinator:
                 max_same_action_count=monitor_config.get("max_same_action_count", 3),
             )
             print("🔍 GeneralMonitor enabled")
+        else:
+            print("📋 Baseline mode (GeneralMonitor disabled)")
 
         # Browser environment for action execution
         self.browser_env = browser_env
@@ -106,6 +109,12 @@ class MultiAgentCoordinator:
         self.images_dir = os.path.join(result_dir, "images")
         self.images_som_dir = os.path.join(result_dir, "images_som")
         self._setup_logging()
+
+        # Initialize TrajectoryLogger for HTML report generation
+        self.trajectory_logger = TrajectoryLogger(
+            output_dir=result_dir,
+            task_name="Agent Execution"
+        )
 
         # Execution state
         self.trajectory: Trajectory = []
@@ -248,6 +257,9 @@ class MultiAgentCoordinator:
 
         # Initialize workflow and monitoring
         self.current_step = 0
+        
+        # Initialize trajectory logger for HTML report
+        self.trajectory_logger.set_user_goal(user_goal)
 
         # Initialize GeneralMonitor if enabled
         if self.enable_monitor and self.monitor:
@@ -418,6 +430,12 @@ class MultiAgentCoordinator:
 
         if self.enable_memory_store:
             self.context_agent.generate_and_store_memory(task_completed)
+        
+        # Generate HTML trajectory report
+        try:
+            self.trajectory_logger.generate_html_report("trajectory_report.html")
+        except Exception as e:
+            print(f"⚠️ Failed to generate trajectory report: {e}")
 
         # final_summary = {
         #     "total_steps_executed": len(self.actions),
@@ -461,61 +479,86 @@ class MultiAgentCoordinator:
         """
         step_number = self.current_step + 1
         print(f"🔄 Executing step {step_number}")
+        
+        # Start trajectory logging for this step
+        self.trajectory_logger.start_step(step_number)
 
+        # Initialize context_result for both modes
+        context_result = {"summary": ""}
+        
+        # Extract current URL for logging
+        current_url = ""
+        if self.trajectory and len(self.trajectory) >= 1:
+            last_state = self.trajectory[-1]
+            if isinstance(last_state, dict) and "info" in last_state:
+                info = last_state["info"]
+                if info and hasattr(info.get("page"), "url"):
+                    current_url = info["page"].url
+        
+        # Log observation to trajectory logger
+        if self.current_observation:
+            obs = self.current_observation
+            if isinstance(obs, dict):
+                self.trajectory_logger.log_observation(
+                    observation_text=obs.get("text", "")[:10000],
+                    observation_image=obs.get("image_raw"),
+                    som_image=obs.get("image"),
+                    current_url=current_url
+                )
 
-        # 1. Context Agent updates context
-        print("🧠 Context Agent: Updating context...")
-        try:
-            # Extract current URL from trajectory info
-            current_url = None
-            if self.trajectory and len(self.trajectory) >= 1:
-                last_state = self.trajectory[-1]
-                if isinstance(last_state, dict) and "info" in last_state:
-                    info = last_state["info"]
-                    if info and hasattr(info.get("page"), "url"):
-                        current_url = info["page"].url
-            
-            context_result = self.context_agent.update_context(
-                trajectory=self.trajectory,
-                user_goal=self.user_goal,
-                current_observation=self.current_observation,
-                latest_intention=self.intentions[-1] if self.intentions else None,
-                latest_action=self.actions[-1] if self.actions else None,
-                latest_reflection=self.reflections[-1] if self.reflections else None,
-                current_url=current_url,
-            )
-            # Show only key context information
-            summary = context_result.get("summary", "No summary")
-            print(f"🧠 Context: {summary[:300]}{'...' if len(summary) > 300 else ''}")
+        # 1. Context Agent updates context (ONLY in Monitor mode)
+        if self.enable_monitor and self.monitor:
+            print("🧠 Context Agent: Updating context...")
+            try:
+                # Extract current URL from trajectory info (already done above)
+                
+                context_result = self.context_agent.update_context(
+                    trajectory=self.trajectory,
+                    user_goal=self.user_goal,
+                    current_observation=self.current_observation,
+                    latest_intention=self.intentions[-1] if self.intentions else None,
+                    latest_action=self.actions[-1] if self.actions else None,
+                    latest_reflection=self.reflections[-1] if self.reflections else None,
+                    current_url=current_url,
+                )
+                # Show only key context information
+                summary = context_result.get("summary", "No summary")
+                print(f"🧠 Context: {summary[:300]}{'...' if len(summary) > 300 else ''}")
 
-            # Store response information for execution summary
+                # Log context agent response summary
+                context_response = {
+                    "summary": summary,
+                }
+                self.log_agent_response("context_agent", step_number, context_response)
+                
+                # Log to trajectory logger for HTML report
+                self.trajectory_logger.log_llm_call(
+                    agent_name="Context",
+                    prompt=f"User Goal: {self.user_goal}",
+                    response=summary,
+                    parsed_result={"summary": summary[:500]}
+                )
+                
+            except Exception as e:
+                print(f"🧠 Context Error: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}")
+                context_result = {
+                    "summary": "Error generating context",
+                }
+                # Log context agent error summary
+                error_response = {
+                    "error": str(e),
+                    "summary": "Error generating context",
+                }
+                self.log_agent_response("context_agent", step_number, error_response)
 
-            # Log context agent response summary with detailed breakdown
-            context_response = {
-                "summary": summary,
-            }
-            self.log_agent_response("context_agent", step_number, context_response)
-            
-        except Exception as e:
-            print(f"🧠 Context Error: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}")
-            context_result = {
-                "summary": "Error generating context",
-            }
-            # Log context agent error summary
-            error_response = {
-                "error": str(e),
-                "summary": "Error generating context",
-            }
-            self.log_agent_response("context_agent", step_number, error_response)
-
-
-        # Check for task completion using context agent's completion check
-        if self.context_agent.check_task_completion(self.user_goal, actions=self.actions):
-            return {
-                "should_terminate": True,
-                "termination_reason": "Task completed",
-                "context_result": context_result,
-            }
+            # Check for task completion using context agent's completion check
+            if self.context_agent.check_task_completion(self.user_goal, actions=self.actions):
+                self.trajectory_logger.end_step()
+                return {
+                    "should_terminate": True,
+                    "termination_reason": "Task completed",
+                    "context_result": context_result,
+                }
 
 
         # 3. Actor Agent executes intention
@@ -655,6 +698,19 @@ class MultiAgentCoordinator:
                 "extracted_intention": extracted_intention
             }
             self.log_agent_response("actor_agent", step_number, actor_response)
+            
+            # Log to trajectory logger for HTML report
+            self.trajectory_logger.log_llm_call(
+                agent_name="Actor",
+                prompt=f"Goal: {current_intention}\nMonitor Feedback: {self.monitor_feedback or 'None'}",
+                response=llm_response or "",
+                parsed_result={
+                    "action_type": str(action_type),
+                    "fulfilled": intention_fulfilled,
+                    "action_str": action_str,
+                }
+            )
+            self.trajectory_logger.log_action(executed_action, action_str)
 
         except Exception as e:
             executed_action = {
@@ -795,6 +851,22 @@ class MultiAgentCoordinator:
                 "prompt_injection": self.monitor_feedback[:200] if self.monitor_feedback else "",
             })
             
+            # Log to trajectory logger for HTML report
+            self.trajectory_logger.log_llm_call(
+                agent_name="Monitor",
+                prompt=f"Action: {action_str}\nIntention: {current_intention}",
+                response=self.monitor_feedback or "No feedback",
+                parsed_result={
+                    "decision": monitor_feedback.decision.value,
+                    "severity": monitor_feedback.severity,
+                    "issues": monitor_feedback.detected_issues[:3] if monitor_feedback.detected_issues else [],
+                }
+            )
+            self.trajectory_logger.log_monitor_feedback(
+                decision=monitor_feedback.decision.value,
+                feedback=self.monitor_feedback or ""
+            )
+            
             # Check for task completion
             task_completed = should_stop
             is_stop_action = executed_action.get("action_type") == ActionTypes.STOP
@@ -804,6 +876,14 @@ class MultiAgentCoordinator:
                                   "Task completed with STOP action" if is_stop_action and not task_completed else \
                                   "Task completed (Monitor + STOP action)"
                 print(f"🎉 {completion_reason}!")
+                
+                # Log monitor feedback and end step
+                self.trajectory_logger.log_monitor_feedback(
+                    decision=monitor_feedback.decision.value,
+                    feedback=self.monitor_feedback or ""
+                )
+                self.trajectory_logger.end_step()
+                
                 return {
                     "should_terminate": True,
                     "termination_reason": completion_reason,
@@ -816,71 +896,48 @@ class MultiAgentCoordinator:
                 }
         
         else:
-            # === MODE B: Baseline Mode (Original) ===
-            # Traditional Reflector-based reflection
-            reflection_result = self.reflector_agent.reflect_execution(
-                trajectory=self.trajectory,
-                intentions=self.intentions,
-                actions=self.actions,
-                current_intention=current_intention,
-                latest_action=executed_action,
-                current_observation=new_observation,
-                context_summary=context_result,
-                high_level_task=self.user_goal,
-            )
-
-            self.reflections.append(reflection_result)
+            # === MODE B: Actor-Only Mode (No Context/Reflector) ===
+            # Only Actor executes, no reflection or context updates
+            # This is used when Monitor is disabled
             
-            # Clear monitor feedback in baseline mode
+            reflection_result = {}  # Empty reflection in actor-only mode
             self.monitor_feedback = None
-
-            # Show checklist results
-            checklist = reflection_result.get("checklist", {})
-            print(f"📋 Reflector Checklist:")
-            print(f"   - Pattern Issue: {checklist.get('has_pattern_issue', False)}")
-            print(f"   - Task Completed: {checklist.get('task_completed', False)}")
-
-            # Show pattern issue analysis if available
-            pattern_issue_analysis = checklist.get("pattern_issue_analysis")
-            if pattern_issue_analysis and pattern_issue_analysis.get("pattern_confirmed", False):
-                print(f"   - Pattern Confirmed: {pattern_issue_analysis.get('pattern_confirmed', False)}")
-                prohibited = pattern_issue_analysis.get("prohibited_actions", [])
-                alternatives = pattern_issue_analysis.get("alternative_actions", [])
-                if prohibited:
-                    print(f"   - Prohibited Actions: {len(prohibited)} items")
-                if alternatives:
-                    print(f"   - Alternative Actions: {len(alternatives)} items")
-
-            # Log reflector agent response summary with checklist format
-            reflector_response = {
-                "has_pattern_issue": checklist.get("has_pattern_issue", False),
-                "task_completed": checklist.get("task_completed", False),
-                "raw_response": checklist.get("raw_response", ""),
-                "pattern_issue_analysis": pattern_issue_analysis,
-            }
-            self.log_agent_response("reflector_agent", step_number, reflector_response)
-
-            # 6. Handle task completion based on reflection results
-            task_completed = reflection_result.get("task_completed", False)
+            
+            # Only check for STOP action to terminate
             is_stop_action = executed_action.get("action_type") == ActionTypes.STOP
-
-            if task_completed or is_stop_action:
-                completion_reason = "Task completed by Reflector Agent" if task_completed and not is_stop_action else \
-                                  "Task completed with STOP action" if is_stop_action and not task_completed else \
-                                  "Task completed by both Reflector Agent and STOP action"
-                print(f"🎉 {completion_reason}!")
+            
+            if is_stop_action:
+                print(f"🎉 Task completed with STOP action!")
+                # Log actor-only mode completion
+                self.log_agent_response("actor_only", step_number, {
+                    "mode": "actor_only",
+                    "action_type": str(executed_action.get("action_type")),
+                    "completed": True,
+                })
+                self.trajectory_logger.end_step()
                 return {
                     "should_terminate": True,
-                    "termination_reason": completion_reason,
+                    "termination_reason": "Task completed with STOP action",
                     "step_number": step_number,
                     "context_result": context_result,
                     "execution_result": execution_result,
                     "reflection_result": reflection_result,
                     "new_observation": new_observation,
                 }
+            
+            # Log actor action in actor-only mode
+            self.log_agent_response("actor_only", step_number, {
+                "mode": "actor_only",
+                "action_type": str(executed_action.get("action_type")),
+                "element_id": executed_action.get("element_id"),
+                "completed": False,
+            })
 
         # 7. Update current step
         self.current_step = step_number
+        
+        # End trajectory logging for this step
+        self.trajectory_logger.end_step()
 
         return {
             "should_terminate": False,
@@ -951,6 +1008,9 @@ class MultiAgentCoordinator:
         self.context_agent.reset()
         self.actor_agent.reset_intention_history()
         self.reflector_agent.reset_reflection_history()
+        
+        # Reset monitor feedback (important for baseline mode)
+        self.monitor_feedback = None
         
         # Reset coordination components
         self.current_step = 0

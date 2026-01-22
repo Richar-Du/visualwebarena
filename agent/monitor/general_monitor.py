@@ -44,10 +44,7 @@ class MonitorFeedback:
     inject_to_prompt: bool                # Whether to inject into Actor's prompt
     
     def to_prompt_injection(self) -> str:
-        """Generate the prompt injection string for Actor.
-        
-        Enhanced to be more emphatic and include explicit prohibitions.
-        """
+        """Generate the prompt injection string for Actor."""
         if not self.inject_to_prompt:
             return ""
         
@@ -77,10 +74,7 @@ class MonitorFeedback:
             lines.append("✅ Consider: scrolling, navigating to a different page, or using different elements!")
             
         elif self.decision == MonitorDecision.STOP:
-            lines.append("🛑🛑🛑 MONITOR STOP COMMAND 🛑🛑🛑")
-            lines.append(f"Message: {self.message}")
-        
-        lines.append("")
+            lines.append(f"🛑 MONITOR STOP: {self.message}")
         
         if self.detected_issues:
             lines.append("📋 DETECTED ISSUES:")
