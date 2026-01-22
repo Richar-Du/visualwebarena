@@ -681,14 +681,17 @@ class MultiAgentCoordinator:
 
 
             # Update Context Agent with the extracted intention from Actor's reasoning
+            # Only update Context Agent in monitor mode
             extracted_intention = execution_result.get("extracted_intention")
             if extracted_intention:
-                print(f"🧠 Updating Context with Actor's intention: {extracted_intention[:100]}{'...' if len(extracted_intention) > 100 else ''}")
-                self.context_agent.update_state(
-                    latest_intention=extracted_intention
-                )
                 # Update intentions history for pattern detection
                 self.intentions.append(extracted_intention)
+                # Only call Context Agent in monitor mode
+                if self.enable_monitor and self.monitor:
+                    print(f"🧠 Updating Context with Actor's intention: {extracted_intention[:100]}{'...' if len(extracted_intention) > 100 else ''}")
+                    self.context_agent.update_state(
+                        latest_intention=extracted_intention
+                    )
 
             # Log actor agent response summary with full LLM response
             actor_response = {
@@ -699,18 +702,7 @@ class MultiAgentCoordinator:
             }
             self.log_agent_response("actor_agent", step_number, actor_response)
             
-            # Log to trajectory logger for HTML report
-            self.trajectory_logger.log_llm_call(
-                agent_name="Actor",
-                prompt=f"Goal: {current_intention}\nMonitor Feedback: {self.monitor_feedback or 'None'}",
-                response=llm_response or "",
-                parsed_result={
-                    "action_type": str(action_type),
-                    "fulfilled": intention_fulfilled,
-                    "action_str": action_str,
-                }
-            )
-            self.trajectory_logger.log_action(executed_action, action_str)
+            # NOTE: trajectory_logger.log_llm_call for Actor is done later after action_str is defined
 
         except Exception as e:
             executed_action = {
@@ -800,6 +792,21 @@ class MultiAgentCoordinator:
             action_str = f"Action: {action_type}"
 
         self.meta_data["action_history"].append(action_str)
+        
+        # Log Actor LLM call to trajectory logger (must be after action_str is defined)
+        llm_response = execution_result.get("llm_response", "") if execution_result else ""
+        intention_fulfilled = execution_result.get("intention_fulfilled", False) if execution_result else False
+        self.trajectory_logger.log_llm_call(
+            agent_name="Actor",
+            prompt=f"Goal: {current_intention}\nMonitor Feedback: {self.monitor_feedback or 'None'}",
+            response=llm_response or "",
+            parsed_result={
+                "action_type": str(action_type),
+                "fulfilled": intention_fulfilled,
+                "action_str": action_str,
+            }
+        )
+        self.trajectory_logger.log_action(executed_action, action_str)
 
         # 5. Post-action processing: Monitor Mode vs Baseline Mode
         # ============================================================
