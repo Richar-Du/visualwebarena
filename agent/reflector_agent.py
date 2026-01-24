@@ -79,7 +79,8 @@ class ReflectorAgent:
                 image_before=image_before,
                 image_after=image_after,
                 latest_action=latest_action,
-                high_level_task=high_level_task or context_summary.get("summary", ""),
+                high_level_task=high_level_task,
+                context_summary=context_summary.get("summary", ""),
             )
 
             # Initialize pattern issue analysis result
@@ -115,6 +116,7 @@ class ReflectorAgent:
                 "current_screenshot": image_after,
                 "checklist": {
                     "has_pattern_issue": checklist_result.get("has_pattern_issue", False),
+                    "has_goal_deviation": checklist_result.get("has_goal_deviation", False),
                     "task_completed": checklist_result.get("task_completed", False),
                     "raw_response": checklist_result.get("raw_response", ""),
                 },

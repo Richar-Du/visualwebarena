@@ -45,7 +45,8 @@ class ContextAgent:
         
         self.url_history: List[str] = []
         self.last_url: str = ""
-        self.page_changed_since_action: bool = False
+        self.url_history: List[str] = []
+        self.last_url: str = ""
 
     def reset(self) -> None:
         """Reset context agent state for a new task."""
@@ -54,7 +55,7 @@ class ContextAgent:
         self.memory_content = ""
         self.url_history: List[str] = []
         self.last_url: str = ""
-        self.page_changed_since_action: bool = False
+        self.last_url: str = ""
 
     def update_state(self,
         current_observation: Optional[Observation] = None,
@@ -108,9 +109,6 @@ class ContextAgent:
         if current_url:
             if self.last_url and current_url != self.last_url:
                 url_changed = True
-                self.page_changed_since_action = True
-                url_change_info = f"[PAGE CHANGED] URL changed from '{self._truncate_url(self.last_url)}' to '{self._truncate_url(current_url)}'"
-                print(f"🔄 {url_change_info}")
             self.url_history.append(current_url)
             self.last_url = current_url
 
@@ -156,13 +154,6 @@ class ContextAgent:
             "current_url": current_url,
             "url_history": self.url_history[-5:],  # Last 5 URLs
         }
-    
-    def _truncate_url(self, url: str, max_length: int = 60) -> str:
-        """Truncate URL for display."""
-        if len(url) <= max_length:
-            return url
-        return url[:max_length] + "..."
-
     
     def _extract_observations_from_trajectory(self, trajectory: Trajectory) -> List[Observation]:
         """Extract observations from trajectory (fallback method)."""

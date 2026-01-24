@@ -128,8 +128,9 @@ class SummaryGenerator:
         """Extract text from intention, truncating if necessary."""
         if intention:
             # Truncate for brevity but keep meaningful content
-            truncated_intention = intention[:200] + "..." if len(intention) > 200 else intention
-            return f"Intention {idx}: {truncated_intention}"
+            #truncated_intention = intention[:200] + "..." if len(intention) > 200 else intention
+            #return f"Intention {idx}: {truncated_intention}"
+            return f"Intention {idx}: {intention}"
         return f"Intention {idx}: None"
 
     def _get_action_text(self, action: Action, idx: int) -> str:

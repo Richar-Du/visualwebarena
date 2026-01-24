@@ -317,8 +317,8 @@ class BrowserActionExecutor:
             if think_start != -1 and think_end != -1:
                 think_content = response[think_start + 7:think_end].strip()
                 # Truncate if too long (keep most relevant reasoning)
-                if len(think_content) > 500:
-                    think_content = think_content[:500] + "..."
+                #if len(think_content) > 500:
+                    #think_content = think_content[:500] + "..."
                 return think_content
 
         # Fallback: if no <think> tags, return a generic intention

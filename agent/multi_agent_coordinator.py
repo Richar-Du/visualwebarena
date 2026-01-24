@@ -91,9 +91,6 @@ class MultiAgentCoordinator:
             self.monitor = GeneralMonitor(
                 lm_config=lm_config,
                 memory_config=memory_config,
-                consecutive_error_threshold=monitor_config.get("consecutive_error_threshold", 3),
-                repetition_window=monitor_config.get("repetition_window", 5),
-                max_same_action_count=monitor_config.get("max_same_action_count", 3),
             )
             print("🔍 GeneralMonitor enabled")
         else:
@@ -613,10 +610,39 @@ class MultiAgentCoordinator:
                 if action_type == ActionTypes.STOP:
                     # Extract and store stop action data for future evaluation use
                     self.stop_action_data = self._extract_stop_action_data(executed_action)
-                    print(f"🛑 STOP action detected. Answer: {self.stop_action_data.get('answer', 'N/A')[:100]}")
+                    proposed_answer = self.stop_action_data.get('answer', 'N/A')
+                    print(f"🛑 STOP action detected. Answer: {proposed_answer[:100]}")
+                    
+                    # === Monitor Validation ===
+                    if self.enable_monitor and self.monitor:
+                        print("🔍 Monitor: Validating result...")
+                        validation = self.monitor.validate_result(
+                            question=self.user_goal, 
+                            proposed_answer=proposed_answer
+                        )
+                        
+                        if not validation.get('is_correct', True):
+                            reason = validation.get('reason', 'Unknown reason')
+                            print(f"❌ Monitor rejected answer: {reason}")
+                            suggestion = validation.get('suggestion', '')
+                            print(f"Monitor suggested: {suggestion}")
+                            
+                            # Construct feedback for next turn
+                            self.monitor_feedback = f"Monitor rejected your answer. Reason: {reason}. You must continue and follow the suggestion: {suggestion}."
+                            
+                            # Change action to NONE to prevent termination
+                            executed_action = {
+                                "action_type": "NONE",
+                                "error": f"Monitor rejected answer: {reason}. You must continue and follow the suggestion: {suggestion}.",
+                                "intention": current_intention
+                            }
+                            # Update references
+                            action_type = "NONE"
+                            self.actions[-1] = executed_action
+                            execution_result["action"] = executed_action
 
                 # Execute action in browser environment if available
-                if self.browser_env is not None:
+                if self.browser_env is not None and action_type != "NONE":
                     try:
                         print(f"🔍 Executing action in browser: {action_type}")
                         obs, reward, terminated, truncated, info = self.browser_env.step(executed_action)
@@ -827,34 +853,38 @@ class MultiAgentCoordinator:
             self.monitor_feedback = monitor_feedback.to_prompt_injection()
             
             # Log monitor decision
-            print(f"🔍 Monitor Decision: {monitor_feedback.decision.value}")
-            if monitor_feedback.detected_issues:
-                print(f"   - Issues: {', '.join(monitor_feedback.detected_issues[:2])}")
-            if monitor_feedback.severity > 0:
-                print(f"   - Severity: {monitor_feedback.severity}/10")
+            if monitor_feedback.has_issue:
+                print(f"🔍 Monitor: Issue detected")
+                if monitor_feedback.correction_guidance:
+                    print(f"   - Guidance: {monitor_feedback.correction_guidance[:200]}...")
+                if monitor_feedback.prohibited_actions:
+                    print(f"   - Prohibited: {', '.join(monitor_feedback.prohibited_actions[:2])}")
+                if monitor_feedback.alternative_actions:
+                    print(f"   - Alternative Actions: {', '.join(monitor_feedback.alternative_actions[:2])}")
+            else:
+                print(f"🔍 Monitor: No issues detected")
             
             # Create reflection result from monitor feedback for compatibility
             reflection_result = {
                 "checklist": {
-                    "has_pattern_issue": monitor_feedback.decision.value in ["warn", "rollback"],
-                    "task_completed": should_stop and monitor_feedback.message == "Task completed successfully",
+                    "has_pattern_issue": monitor_feedback.has_issue,
+                    "task_completed": should_stop,
                 },
                 "monitor_feedback": {
-                    "decision": monitor_feedback.decision.value,
-                    "message": monitor_feedback.message,
-                    "severity": monitor_feedback.severity,
-                    "detected_issues": monitor_feedback.detected_issues,
-                    "suggested_actions": monitor_feedback.suggested_actions,
+                    "has_issue": monitor_feedback.has_issue,
+                    "prohibited_actions": monitor_feedback.prohibited_actions,
+                    "alternative_actions": monitor_feedback.alternative_actions,
+                    "correction_guidance": monitor_feedback.correction_guidance,
                 },
             }
             self.reflections.append(reflection_result)
             
             # Log monitor response
             self.log_agent_response("monitor", step_number, {
-                "decision": monitor_feedback.decision.value,
-                "message": monitor_feedback.message,
-                "severity": monitor_feedback.severity,
-                "issues": monitor_feedback.detected_issues,
+                "has_issue": monitor_feedback.has_issue,
+                "prohibited_actions": monitor_feedback.prohibited_actions,
+                "alternative_actions": monitor_feedback.alternative_actions,
+                "correction_guidance": monitor_feedback.correction_guidance[:200] if monitor_feedback.correction_guidance else "",
                 "prompt_injection": self.monitor_feedback[:200] if self.monitor_feedback else "",
             })
             
@@ -864,13 +894,12 @@ class MultiAgentCoordinator:
                 prompt=f"Action: {action_str}\nIntention: {current_intention}",
                 response=self.monitor_feedback or "No feedback",
                 parsed_result={
-                    "decision": monitor_feedback.decision.value,
-                    "severity": monitor_feedback.severity,
-                    "issues": monitor_feedback.detected_issues[:3] if monitor_feedback.detected_issues else [],
+                    "has_issue": monitor_feedback.has_issue,
+                    "guidance": monitor_feedback.correction_guidance[:100] if monitor_feedback.correction_guidance else "",
                 }
             )
             self.trajectory_logger.log_monitor_feedback(
-                decision=monitor_feedback.decision.value,
+                decision="issue" if monitor_feedback.has_issue else "ok",
                 feedback=self.monitor_feedback or ""
             )
             
@@ -886,7 +915,7 @@ class MultiAgentCoordinator:
                 
                 # Log monitor feedback and end step
                 self.trajectory_logger.log_monitor_feedback(
-                    decision=monitor_feedback.decision.value,
+                    decision="issue" if monitor_feedback.has_issue else "ok",
                     feedback=self.monitor_feedback or ""
                 )
                 self.trajectory_logger.end_step()

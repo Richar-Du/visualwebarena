@@ -41,9 +41,6 @@
     "verbose": true
   },
   "monitor": {
-    "enable_monitor": true,
-    "consecutive_error_threshold": 3,
-    "repetition_window": 5,
-    "max_same_action_count": 3
+    "enable_monitor": true
   }
 }

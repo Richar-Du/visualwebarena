@@ -40,6 +40,7 @@ class ChecklistAnalyzer:
         image_after: Optional[np.ndarray],
         latest_action: Action,
         high_level_task: str,
+        context_summary: str = "",
     ) -> Dict[str, Any]:
         """Run unified checklist analysis.
 
@@ -50,6 +51,7 @@ class ChecklistAnalyzer:
             image_after: Screenshot after action
             latest_action: The executed action
             high_level_task: Original task goal
+            context_summary: Current context summary from Context Agent
 
         Returns:
             Dictionary with checklist results
@@ -71,6 +73,7 @@ class ChecklistAnalyzer:
                     element_id=element_id,
                     action_text=action_text,
                     high_level_task=high_level_task,
+                    context_summary=context_summary,
                 )
                 response = call_llm(self.lm_config, messages).strip()
                 result = self._parse_response(response)
@@ -87,6 +90,7 @@ class ChecklistAnalyzer:
             element_id=element_id,
             action_text=action_text,
             high_level_task=high_level_task,
+            context_summary=context_summary,
         )
 
     def _build_multimodal_prompt(
@@ -99,6 +103,7 @@ class ChecklistAnalyzer:
         element_id: str,
         action_text: str,
         high_level_task: str,
+        context_summary: str = "",
     ) -> List[Dict[str, Any]]:
         """Build multimodal prompt for checklist analysis."""
         # Convert numpy arrays to PIL Images
@@ -132,6 +137,7 @@ class ChecklistAnalyzer:
             element_id=element_id,
             action_text=action_text,
             high_level_task=high_level_task,
+            context_summary=context_summary if context_summary else "No context summary available",
         )
 
         # Build OpenAI Vision API format message with before/after images
@@ -159,6 +165,7 @@ class ChecklistAnalyzer:
         element_id: str,
         action_text: str,
         high_level_task: str,
+        context_summary: str = "",
     ) -> Dict[str, Any]:
         """Fallback text-only checklist analysis."""
         # Format recent intents
@@ -181,6 +188,7 @@ class ChecklistAnalyzer:
             element_id=element_id,
             action_text=action_text,
             high_level_task=high_level_task,
+            context_summary=context_summary if context_summary else "No context summary available",
         )
 
         try:
@@ -217,6 +225,8 @@ class ChecklistAnalyzer:
                 # Extract boolean values with type conversion
                 if "has_pattern_issue" in parsed:
                     result["has_pattern_issue"] = self._to_bool(parsed["has_pattern_issue"])
+                if "has_goal_deviation" in parsed:
+                    result["has_goal_deviation"] = self._to_bool(parsed["has_goal_deviation"])
                 if "task_completed" in parsed:
                     result["task_completed"] = self._to_bool(parsed["task_completed"])
 
@@ -241,6 +251,12 @@ class ChecklistAnalyzer:
         elif "repetitive" in response_lower and "detected" in response_lower:
             result["has_pattern_issue"] = True
 
+        # Goal deviation detection
+        if "goal deviation: true" in response_lower or "has_goal_deviation: true" in response_lower:
+            result["has_goal_deviation"] = True
+        elif "drifting" in response_lower or "off track" in response_lower:
+            result["has_goal_deviation"] = True
+
         # Task completion detection
         if "task_completed: true" in response_lower or "task is complete" in response_lower:
             result["task_completed"] = True
@@ -251,6 +267,7 @@ class ChecklistAnalyzer:
         """Get default checklist result."""
         return {
             "has_pattern_issue": False,
+            "has_goal_deviation": False,
             "task_completed": False,
         }
 
@@ -284,10 +301,7 @@ class ChecklistAnalyzer:
         element_id = action.get("element_id", "N/A")
         action_text = self._decode_action_text(action)
 
-        formatted_parts = [f"Type: {action_type}"]
-        if element_id != "N/A":
-            formatted_parts.append(f"Element: {element_id}")
-        if action_text != "N/A":
-            formatted_parts.append(f"Text: '{action_text}'")
-
-        return ", ".join(formatted_parts)
+        if element_id != "N/A" and action_text != "N/A":
+            return f"{action_text}[{element_id}]"
+        else:
+            return f"Type: {action_type}"
