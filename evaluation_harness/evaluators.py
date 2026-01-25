@@ -46,6 +46,8 @@ from evaluation_harness.helper_functions import (
 
 Trajectory = list[Union[Action, StateInfo]]
 
+import logging
+logger = logging.getLogger(__name__)
 
 @beartype
 class Evaluator(object):
@@ -214,6 +216,9 @@ class StringEvaluator(Evaluator):
 
         score = 1.0
         for approach, value in configs["eval"]["reference_answers"].items():
+            logger.info(f"[Eval Log] Method: string_match | Approach: {approach}")
+            logger.info(f"[Eval Log] Ref: {value}")
+            logger.info(f"[Eval Log] Pred: {pred}")
             match approach:
                 case "exact_match":
                     score *= self.exact_match(ref=value, pred=pred)
@@ -293,6 +298,9 @@ class StringSoftEvaluator(Evaluator):
         last_action = self.get_last_action(trajectory)
         pred = last_action["answer"]
         ref = configs["eval"]["reference_answers"]
+        logger.info(f"[Eval Log] Method: string_soft_eval")
+        logger.info(f"[Eval Log] Ref: {ref}")
+        logger.info(f"[Eval Log] Pred: {pred}")
         # rouge
         m = evaluate.load("rouge")
         rouge = m.compute(predictions=[pred], references=[ref])
@@ -324,6 +332,10 @@ class URLExactEvaluator(Evaluator):
         ref_urls = configs["eval"]["reference_url"].split(" |OR| ")
         ref_urls = [clean_url(url) for url in ref_urls]
         matching_rule = configs["eval"].get("url_note", "EXACT")
+        logger.info(f"[Eval Log] Method: url_match")
+        logger.info(f"[Eval Log] Ref URLs: {ref_urls}")
+        logger.info(f"[Eval Log] Pred URL: {pred}")
+        logger.info(f"[Eval Log] Matching Rule: {matching_rule}")
         if matching_rule == "EXACT":
             if pred in ref_urls:
                 return 1.0
@@ -409,6 +421,15 @@ class HTMLContentExactEvaluator(Evaluator):
             if selected_element is None:
                 score = 0.0
                 break
+
+            logger.info(f"[Eval Log] Method: program_html")
+            logger.info(f"[Eval Log] Target URL: {target_url}")
+            logger.info(f"[Eval Log] Locator: {locator}")
+            logger.info(f"[Eval Log] Ref (Requirements): {target['required_contents']}")
+            if selected_element:
+                 logger.info(f"[Eval Log] Pred (Selected Element First 1000 chars): {str(selected_element)[:1000]}")
+            else:
+                 logger.info(f"[Eval Log] Pred (Selected Element): {selected_element}")
 
             if "exact_match" in target["required_contents"]:
                 required_contents = target["required_contents"]["exact_match"]
@@ -556,6 +577,9 @@ class PageImageEvaluator(Evaluator):
             else:
                 # Run the VQA eval on the image elements.
                 eval_vqas = query.get("eval_vqa", [])
+                logger.info(f"[Eval Log] Method: page_image_query")
+                logger.info(f"[Eval Log] Locator: {locator}")
+                logger.info(f"[Eval Log] Target URL: {target_url}")
                 assert (
                     len(eval_vqas) > 0 or "eval_fuzzy_image_match" in query
                 ), "eval_vqa must have at least 2 questions or eval_fuzzy_image_match must be True"
@@ -565,6 +589,9 @@ class PageImageEvaluator(Evaluator):
                     pred_ans = self.captioning_fn(
                         all_image_pixels, [prompt] * len(all_image_pixels)
                     )
+                    logger.info(f"[Eval Log] VQA Question: {question}")
+                    logger.info(f"[Eval Log] VQA Ref Answer: {answer}")
+                    logger.info(f"[Eval Log] VQA Pred Answer: {pred_ans}")
                     score *= float(
                         any(
                             [answer.lower() in ans.lower() for ans in pred_ans]
@@ -575,6 +602,7 @@ class PageImageEvaluator(Evaluator):
                     ssim_threshold = query.get(
                         "ssim_threshold", self.ssim_threshold
                     )
+                    print(f"[Eval Log] Fuzzy Image Match Enabled. SSIM Threshold: {ssim_threshold}")
                     exact_match_imgs = query["eval_fuzzy_image_match"].split(
                         " |OR| "
                     )
