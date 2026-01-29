@@ -1,7 +1,7 @@
 """General Monitor for centralized trajectory monitoring and behavior correction.
 
 Simplified Monitor that:
-1. Calls Reflector every 3 steps to detect issues
+1. Calls Reflector every step to detect issues
 2. When issues detected, calls PatternIssueAnalyzer for detailed guidance
 3. Injects correction guidance (prohibited_actions, alternative_actions, correction_guidance) to Actor
 4. Validates final results before STOP action
@@ -66,7 +66,7 @@ class GeneralMonitor:
     """Simplified Monitor that detects issues and provides correction guidance.
     
     Key Features:
-    - Calls Reflector every 3 steps
+    - Calls Reflector every step
     - When issues detected, uses PatternIssueAnalyzer for detailed guidance
     - Injects prohibited_actions, alternative_actions, correction_guidance to Actor
     - Validates final results before STOP action
@@ -138,58 +138,58 @@ class GeneralMonitor:
         )
         context_summary = context_result.get("summary", "")
         
-        # === Step 2: Call Reflector every 3 steps ===
-        feedback = MonitorFeedback(
-            has_issue=False,
-            prohibited_actions=[],
-            alternative_actions=[],
-            correction_guidance="",
-            context_summary=context_summary,
+        # === Step 2: Call Reflector every step ===
+        print("🔍 Monitor: Running Reflector analysis...")
+        reflection_result = self._check_action(
+            trajectory=trajectory,
+            action=action,
+            observation=observation,
+            intention=intention,
         )
         
-        if self.step_count % 3 == 0:
-            print("🔍 Monitor: Running Reflector analysis (every 3 steps)...")
-            reflection_result = self._check_action(
-                trajectory=trajectory,
-                action=action,
-                observation=observation,
-                intention=intention,
+        checklist = reflection_result.get("checklist", {})
+        has_pattern_issue = checklist.get("has_pattern_issue", False)
+        has_goal_deviation = checklist.get("has_goal_deviation", False)
+        task_completed = checklist.get("task_completed", False)
+        
+        # If any issue detected, call PatternIssueAnalyzer for detailed guidance
+        if has_pattern_issue or has_goal_deviation:
+            print("⚠️ Monitor: Issue detected, getting detailed guidance...")
+            
+            recent_intents = [r["intention"] for r in self.action_history[-5:] if r.get("intention")]
+            recent_actions = [r["action"] for r in self.action_history[-5:]]
+            
+            issue_analysis = self.pattern_issue_analyzer.analyze_pattern_issue(
+                recent_intents=recent_intents,
+                recent_actions=recent_actions,
+                current_intention=intention or self.global_goal,
+                latest_action=action,
+                high_level_task=self.global_goal,
+                checklist_raw_response=checklist.get("raw_response", ""),
             )
             
-            checklist = reflection_result.get("checklist", {})
-            has_pattern_issue = checklist.get("has_pattern_issue", False)
-            has_goal_deviation = checklist.get("has_goal_deviation", False)
-            task_completed = checklist.get("task_completed", False)
+            feedback = MonitorFeedback(
+                has_issue=True,
+                prohibited_actions=issue_analysis.get("prohibited_actions", []),
+                alternative_actions=issue_analysis.get("alternative_actions", []),
+                correction_guidance=issue_analysis.get("correction_guidance", ""),
+                context_summary=context_summary,
+            )
             
-            # If any issue detected, call PatternIssueAnalyzer for detailed guidance
-            if has_pattern_issue or has_goal_deviation:
-                print("⚠️ Monitor: Issue detected, getting detailed guidance...")
-                
-                recent_intents = [r["intention"] for r in self.action_history[-5:] if r.get("intention")]
-                recent_actions = [r["action"] for r in self.action_history[-5:]]
-                
-                issue_analysis = self.pattern_issue_analyzer.analyze_pattern_issue(
-                    recent_intents=recent_intents,
-                    recent_actions=recent_actions,
-                    current_intention=intention or self.global_goal,
-                    latest_action=action,
-                    high_level_task=self.global_goal,
-                    checklist_raw_response=checklist.get("raw_response", ""),
-                )
-                
-                feedback = MonitorFeedback(
-                    has_issue=True,
-                    prohibited_actions=issue_analysis.get("prohibited_actions", []),
-                    alternative_actions=issue_analysis.get("alternative_actions", []),
-                    correction_guidance=issue_analysis.get("correction_guidance", ""),
-                    context_summary=context_summary,
-                )
-                
-                print(f"📋 Guidance: {feedback.correction_guidance[:100]}..." if feedback.correction_guidance else "No guidance")
-            
-            # Check for task completion
-            if task_completed:
-                return feedback, True
+            print(f"📋 Guidance: {feedback.correction_guidance[:100]}..." if feedback.correction_guidance else "No guidance")
+        else:
+            feedback = MonitorFeedback(
+                has_issue=False,
+                prohibited_actions=[],
+                alternative_actions=[],
+                correction_guidance="",
+                context_summary=context_summary,
+            )
+        
+        # Check for task completion
+        if task_completed:
+            self.feedback_history.append(feedback)
+            return feedback, True
         
         self.feedback_history.append(feedback)
         
