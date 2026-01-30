@@ -558,6 +558,10 @@ class TrajectoryLogger:
                 <h3>🎯 Task Goal</h3>
                 <p>{self._escape_html(self.user_goal)}</p>
             </div>
+            <div style="margin-top:15px;display:flex;gap:10px;">
+                <button class="toggle-btn" onclick="expandAllLLMCalls()" style="padding:8px 16px;">📖 Expand All LLM Calls</button>
+                <button class="toggle-btn" onclick="collapseAllLLMCalls()" style="padding:8px 16px;">📕 Collapse All LLM Calls</button>
+            </div>
         </div>
         
         <!-- Steps -->
@@ -607,6 +611,36 @@ class TrajectoryLogger:
                 btn.textContent = obsText.style.display === 'none' ? 'Show Observation' : 'Hide Observation';
             }});
         }});
+        
+        // Auto-expand Actor LLM calls by default for easier viewing
+        document.querySelectorAll('.agent-badge.actor').forEach(badge => {{
+            const header = badge.closest('.llm-call-header');
+            if (header) {{
+                const content = header.nextElementSibling;
+                content.classList.add('expanded');
+                const btn = header.querySelector('.toggle-btn');
+                if (btn) btn.textContent = '▼ Collapse';
+            }}
+        }});
+        
+        // Expand/Collapse All functionality
+        function expandAllLLMCalls() {{
+            document.querySelectorAll('.llm-content').forEach(content => {{
+                content.classList.add('expanded');
+            }});
+            document.querySelectorAll('.llm-call-header .toggle-btn').forEach(btn => {{
+                btn.textContent = '▼ Collapse';
+            }});
+        }}
+        
+        function collapseAllLLMCalls() {{
+            document.querySelectorAll('.llm-content').forEach(content => {{
+                content.classList.remove('expanded');
+            }});
+            document.querySelectorAll('.llm-call-header .toggle-btn').forEach(btn => {{
+                btn.textContent = '▶ Expand';
+            }});
+        }}
     </script>
 </body>
 </html>"""

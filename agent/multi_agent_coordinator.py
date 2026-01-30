@@ -944,10 +944,15 @@ class MultiAgentCoordinator:
             
             if is_stop_action:
                 print(f"🎉 Task completed with STOP action!")
-                # Log actor-only mode completion
+                # Log actor-only mode completion with full details
+                llm_response = execution_result.get("llm_response", "") if execution_result else ""
                 self.log_agent_response("actor_only", step_number, {
                     "mode": "actor_only",
+                    "llm_response": llm_response,
                     "action_type": str(executed_action.get("action_type")),
+                    "element_id": executed_action.get("element_id"),
+                    "text": executed_action.get("text"),
+                    "answer": executed_action.get("answer"),
                     "completed": True,
                 })
                 self.trajectory_logger.end_step()
@@ -961,11 +966,29 @@ class MultiAgentCoordinator:
                     "new_observation": new_observation,
                 }
             
-            # Log actor action in actor-only mode
+            # Log actor action in actor-only mode with full details
+            llm_response = execution_result.get("llm_response", "") if execution_result else ""
+            extracted_intention = execution_result.get("extracted_intention", "") if execution_result else ""
+            
+            # Print detailed execution info to console in baseline mode
+            print(f"📋 Baseline Mode - Step {step_number} Details:")
+            print(f"   Action: {executed_action.get('action_type')} on element {executed_action.get('element_id', 'N/A')}")
+            if executed_action.get("text"):
+                text_preview = str(executed_action.get("text"))[:100]
+                print(f"   Text: {text_preview}{'...' if len(str(executed_action.get('text', ''))) > 100 else ''}")
+            if extracted_intention:
+                print(f"   Intention: {extracted_intention[:150]}{'...' if len(extracted_intention) > 150 else ''}")
+            if llm_response:
+                response_preview = llm_response[:300].replace('\n', ' ')
+                print(f"   LLM Response Preview: {response_preview}{'...' if len(llm_response) > 300 else ''}")
+            
             self.log_agent_response("actor_only", step_number, {
                 "mode": "actor_only",
+                "llm_response": llm_response,
+                "extracted_intention": extracted_intention,
                 "action_type": str(executed_action.get("action_type")),
                 "element_id": executed_action.get("element_id"),
+                "text": executed_action.get("text"),
                 "completed": False,
             })
 
