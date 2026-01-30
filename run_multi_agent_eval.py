@@ -278,13 +278,18 @@ def test(args, test_file_list):
             device, dtype, captioning_model
         )
         
+    # Initialize eval captioning function using API-based approach from config
+    # This replaces the local BLIP-2 model with an OpenAI-compatible VLM API
     eval_caption_image_fn = None
-    # if not eval_caption_image_fn:
-    #     eval_caption_image_fn = image_utils.get_captioning_fn(
-    #         args.eval_captioning_model_device,
-    #         torch.float16 if torch.cuda.is_available() and args.eval_captioning_model_device == "cuda" else torch.float32,
-    #         args.eval_captioning_model,
-    #     )
+    eval_config = config.get('eval', {})
+    if eval_config.get('provider') == 'openai':
+        from evaluation_harness.api_image_utils import get_api_captioning_fn_from_config
+        try:
+            eval_caption_image_fn = get_api_captioning_fn_from_config(config)
+            logger.info(f"[Eval] Using API-based captioning with model: {eval_config.get('model', 'gpt-5.1')}")
+        except Exception as e:
+            logger.warning(f"[Eval] Failed to initialize API captioning: {e}")
+            eval_caption_image_fn = None
 
     # Build viewport_size from config
     viewport_size = {

@@ -586,6 +586,15 @@ class PageImageEvaluator(Evaluator):
                 for qa in eval_vqas:
                     question, answer = qa["question"], qa["answer"]
                     prompt = f"Q: {question} A:"
+                    
+                    # Validate captioning function exists
+                    if self.captioning_fn is None:
+                        raise ValueError(
+                            "captioning_fn is None. Please configure 'eval' section in config_vlm.json "
+                            "with provider='openai' and model='gpt-5.1' (or another VLM model) to enable "
+                            "page_image_query evaluation. Alternatively, use a local BLIP-2 model."
+                        )
+                    
                     pred_ans = self.captioning_fn(
                         all_image_pixels, [prompt] * len(all_image_pixels)
                     )

@@ -42,5 +42,11 @@
   },
   "monitor": {
     "enable_monitor": true
+  },
+  "eval": {
+    "provider": "openai",
+    "model": "gpt-5.1",
+    "max_tokens": 1024,
+    "temperature": 0.3
   }
 }
