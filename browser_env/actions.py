@@ -1345,6 +1345,12 @@ def execute_action(
                 element_id = action["element_id"]
                 element_center = obseration_processor.get_element_center(element_id)  # type: ignore[attr-defined]
                 execute_mouse_click(element_center[0], element_center[1], page)
+                
+                # If this is an overwrite action, clear the field first
+                if action.get('_clear_first', False):
+                    execute_key_press("Meta+A", page)
+                    execute_key_press('Backspace', page)
+                
                 execute_type(action["text"], page)
             elif action["element_role"] and action["element_name"]:
                 element_role = int(action["element_role"])
@@ -1763,6 +1769,28 @@ def create_id_based_action(action_str: str) -> Action:
                 raise ActionParsingError(f"Invalid clear action {action_str}")
             element_id = match.group(1)
             return create_clear_action(element_id=element_id)
+        case "overwrite":
+            # Overwrite text: clear existing content then type new text
+            # add default enter flag
+            if not (action_str.endswith("[0]") or action_str.endswith("[1]")):
+                action_str += " [1]"
+
+            match = re.search(
+                r"overwrite ?\[(\d+)\] ?\[(.+)\] ?\[(\d+)\]", action_str
+            )
+            if not match:
+                raise ActionParsingError(f"Invalid overwrite action {action_str}")
+            element_id, text, enter_flag = (
+                match.group(1),
+                match.group(2),
+                match.group(3),
+            )
+            if enter_flag == "1":
+                text += "\n"
+            # Create a TYPE action with a flag to indicate clearing first
+            action = create_type_action(text=text, element_id=element_id)
+            action['_clear_first'] = True
+            return action
         case "upload":
             # add default enter flag
             if not (action_str.endswith("[0]") or action_str.endswith("[1]")):
@@ -1830,6 +1858,9 @@ def create_id_based_action(action_str: str) -> Action:
             return create_go_back_action()
         case "go_forward":
             return create_go_forward_action()
+        case "refresh":
+            # Refresh the current page by pressing F5
+            return create_key_press_action(key_comb="F5")
         case "tab_focus":
             match = re.search(r"tab_focus ?\[(\d+)\]", action_str)
             if not match:
