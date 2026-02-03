@@ -6,10 +6,14 @@ specific correction guidance to prevent repetitive errors.
 
 from typing import Any, Dict, List, Optional
 import json
+import os
 
+from PIL import Image
 from browser_env import Action
+from browser_env.utils import pil_to_b64
 from llms import lm_config, call_llm
 from ..prompts.prompt_loader import load_prompt_template
+from ..utils import is_multimodal_model
 
 
 class PatternIssueAnalyzer:
@@ -72,9 +76,39 @@ class PatternIssueAnalyzer:
         )
 
         try:
-            response = call_llm(
-                self.lm_config, [{"role": "user", "content": prompt}]
-            ).strip()
+            # Check if this is a multimodal model
+            if is_multimodal_model(self.lm_config.model):
+                # Build multimodal message with example images
+                content = []
+                
+                # Add example images from pattern_issue_examples directory
+                example_dir = "agent/prompts/pattern_issue_examples"
+                if os.path.exists(example_dir):
+                    example_files = sorted([f for f in os.listdir(example_dir) if f.endswith('.png')])
+                    for i, img_file in enumerate(example_files):
+                        img_path = os.path.join(example_dir, img_file)
+                        try:
+                            example_img = Image.open(img_path)
+                            content.extend([
+                                {"type": "text", "text": f"Pattern example image {i+1}:"},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": pil_to_b64(example_img)}
+                                },
+                            ])
+                            print(f"✓ Loaded pattern example: {img_file}")
+                        except Exception as e:
+                            print(f"⚠ Warning: Failed to load {img_file}: {e}")
+                
+                # Add the text prompt
+                content.append({"type": "text", "text": prompt})
+                
+                messages = [{"role": "user", "content": content}]
+            else:
+                # Fallback to text-only for non-multimodal models
+                messages = [{"role": "user", "content": prompt}]
+            
+            response = call_llm(self.lm_config, messages).strip()
 
             # Parse the response
             analysis_result = self._parse_analysis_response(response)
