@@ -205,13 +205,13 @@ class ChecklistAnalyzer:
             return result
 
     def _parse_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response to extract 5 boolean checklist values.
+        """Parse LLM response to extract checklist values including task_completion_reason.
 
         Args:
             response: Raw LLM response containing JSON
 
         Returns:
-            Dictionary with 5 boolean values
+            Dictionary with checklist values including task_completion_reason
         """
         result = self._get_default_result()
 
@@ -229,6 +229,15 @@ class ChecklistAnalyzer:
                     result["has_goal_deviation"] = self._to_bool(parsed["has_goal_deviation"])
                 if "task_completed" in parsed:
                     result["task_completed"] = self._to_bool(parsed["task_completed"])
+                # Extract pattern_issue_reason (new field)
+                if "pattern_issue_reason" in parsed:
+                    result["pattern_issue_reason"] = str(parsed["pattern_issue_reason"])
+                # Extract goal_deviation_reason
+                if "goal_deviation_reason" in parsed:
+                    result["goal_deviation_reason"] = str(parsed["goal_deviation_reason"])
+                # Extract task_completion_reason
+                if "task_completion_reason" in parsed:
+                    result["task_completion_reason"] = str(parsed["task_completion_reason"])
 
                 return result
 
@@ -248,18 +257,31 @@ class ChecklistAnalyzer:
         # Pattern issue detection
         if "pattern issue: true" in response_lower or "has_pattern_issue: true" in response_lower:
             result["has_pattern_issue"] = True
+            result["pattern_issue_reason"] = "Pattern issue detected based on keyword analysis."
         elif "repetitive" in response_lower and "detected" in response_lower:
             result["has_pattern_issue"] = True
+            result["pattern_issue_reason"] = "Repetitive action pattern detected."
+        elif "same element" in response_lower and "click" in response_lower:
+            result["has_pattern_issue"] = True
+            result["pattern_issue_reason"] = "repeated_clicks: Same element clicked multiple times."
 
         # Goal deviation detection
         if "goal deviation: true" in response_lower or "has_goal_deviation: true" in response_lower:
             result["has_goal_deviation"] = True
+            result["goal_deviation_reason"] = "Goal deviation detected based on keyword analysis."
         elif "drifting" in response_lower or "off track" in response_lower:
             result["has_goal_deviation"] = True
+            result["goal_deviation_reason"] = "Agent appears to be drifting off track."
+        elif "wrong color" in response_lower or "wrong price" in response_lower:
+            result["has_goal_deviation"] = True
+            result["goal_deviation_reason"] = "Product attribute mismatch detected."
 
         # Task completion detection
         if "task_completed: true" in response_lower or "task is complete" in response_lower:
             result["task_completed"] = True
+            result["task_completion_reason"] = "Task appears complete based on keyword detection."
+        else:
+            result["task_completion_reason"] = "Task not yet complete based on keyword detection."
 
         return result
 
@@ -267,8 +289,11 @@ class ChecklistAnalyzer:
         """Get default checklist result."""
         return {
             "has_pattern_issue": False,
+            "pattern_issue_reason": "",  # Field for pattern issue explanation
             "has_goal_deviation": False,
+            "goal_deviation_reason": "",  # Field for goal deviation explanation
             "task_completed": False,
+            "task_completion_reason": "",  # Field for task completion explanation
         }
 
     def _to_bool(self, value: Any) -> bool:

@@ -612,34 +612,7 @@ class MultiAgentCoordinator:
                     self.stop_action_data = self._extract_stop_action_data(executed_action)
                     proposed_answer = self.stop_action_data.get('answer', 'N/A')
                     print(f"🛑 STOP action detected. Answer: {proposed_answer[:100]}")
-                    
-                    # === Monitor Validation ===
-                    if self.enable_monitor and self.monitor:
-                        print("🔍 Monitor: Validating result...")
-                        validation = self.monitor.validate_result(
-                            question=self.user_goal, 
-                            proposed_answer=proposed_answer
-                        )
-                        
-                        if not validation.get('is_correct', True):
-                            reason = validation.get('reason', 'Unknown reason')
-                            print(f"❌ Monitor rejected answer: {reason}")
-                            suggestion = validation.get('suggestion', '')
-                            print(f"Monitor suggested: {suggestion}")
-                            
-                            # Construct feedback for next turn
-                            self.monitor_feedback = f"Monitor rejected your answer. Reason: {reason}. You must continue and follow the suggestion: {suggestion}."
-                            
-                            # Change action to NONE to prevent termination
-                            executed_action = {
-                                "action_type": "NONE",
-                                "error": f"Monitor rejected answer: {reason}. You must continue and follow the suggestion: {suggestion}.",
-                                "intention": current_intention
-                            }
-                            # Update references
-                            action_type = "NONE"
-                            self.actions[-1] = executed_action
-                            execution_result["action"] = executed_action
+                    # Note: STOP validation is now handled by Monitor's checklist in step() method
 
                 # Execute action in browser environment if available
                 if self.browser_env is not None and action_type != "NONE":
@@ -865,11 +838,18 @@ class MultiAgentCoordinator:
                 print(f"🔍 Monitor: No issues detected")
             
             # Create reflection result from monitor feedback for compatibility
+            # Use the actual checklist from monitor_feedback if available
+            checklist_data = monitor_feedback.checklist if monitor_feedback.checklist else {
+                "has_pattern_issue": monitor_feedback.has_issue,
+                "pattern_issue_reason": "",
+                "has_goal_deviation": False,
+                "goal_deviation_reason": "",
+                "task_completed": should_stop,
+                "task_completion_reason": "",
+            }
+            
             reflection_result = {
-                "checklist": {
-                    "has_pattern_issue": monitor_feedback.has_issue,
-                    "task_completed": should_stop,
-                },
+                "checklist": checklist_data,
                 "monitor_feedback": {
                     "has_issue": monitor_feedback.has_issue,
                     "prohibited_actions": monitor_feedback.prohibited_actions,
@@ -879,14 +859,25 @@ class MultiAgentCoordinator:
             }
             self.reflections.append(reflection_result)
             
-            # Log monitor response
+            # Log monitor response with detailed checklist information
             self.log_agent_response("monitor", step_number, {
                 "has_issue": monitor_feedback.has_issue,
                 "prohibited_actions": monitor_feedback.prohibited_actions,
                 "alternative_actions": monitor_feedback.alternative_actions,
                 "correction_guidance": monitor_feedback.correction_guidance[:200] if monitor_feedback.correction_guidance else "",
                 "prompt_injection": self.monitor_feedback[:200] if self.monitor_feedback else "",
+                "checklist": {
+                    "has_pattern_issue": checklist_data.get("has_pattern_issue", False),
+                    "pattern_issue_reason": checklist_data.get("pattern_issue_reason", "")[:200],
+                    "has_goal_deviation": checklist_data.get("has_goal_deviation", False),
+                    "goal_deviation_reason": checklist_data.get("goal_deviation_reason", "")[:200],
+                    "task_completed": checklist_data.get("task_completed", False),
+                    "task_completion_reason": checklist_data.get("task_completion_reason", "")[:200],
+                },
             })
+            
+            # Log checklist result to trajectory logger for HTML report
+            self.trajectory_logger.log_checklist_result(checklist_data)
             
             # Log to trajectory logger for HTML report
             self.trajectory_logger.log_llm_call(
@@ -896,6 +887,9 @@ class MultiAgentCoordinator:
                 parsed_result={
                     "has_issue": monitor_feedback.has_issue,
                     "guidance": monitor_feedback.correction_guidance[:100] if monitor_feedback.correction_guidance else "",
+                    "has_pattern_issue": checklist_data.get("has_pattern_issue", False),
+                    "has_goal_deviation": checklist_data.get("has_goal_deviation", False),
+                    "task_completed": checklist_data.get("task_completed", False),
                 }
             )
             self.trajectory_logger.log_monitor_feedback(
@@ -903,14 +897,12 @@ class MultiAgentCoordinator:
                 feedback=self.monitor_feedback or ""
             )
             
-            # Check for task completion
-            task_completed = should_stop
-            is_stop_action = executed_action.get("action_type") == ActionTypes.STOP
-            
-            if task_completed or is_stop_action:
-                completion_reason = "Monitor detected task completion" if task_completed and not is_stop_action else \
-                                  "Task completed with STOP action" if is_stop_action and not task_completed else \
-                                  "Task completed (Monitor + STOP action)"
+            # Check for task completion - ONLY based on checklist's decision (should_stop)
+            # Actor's STOP action alone doesn't terminate; checklist must confirm task_completed
+            if should_stop:
+                is_stop_action = executed_action.get("action_type") == ActionTypes.STOP
+                completion_reason = "Task completed (validated by checklist)" if is_stop_action else \
+                                  "Monitor detected task completion"
                 print(f"🎉 {completion_reason}!")
                 
                 # Log monitor feedback and end step

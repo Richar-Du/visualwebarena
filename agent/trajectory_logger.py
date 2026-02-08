@@ -55,6 +55,15 @@ class StepRecord:
     # Monitor feedback (if any)
     monitor_decision: str = ""
     monitor_feedback: str = ""
+    
+    # Reflector checklist results (new fields)
+    checklist_result: Dict[str, Any] = field(default_factory=dict)
+    has_pattern_issue: bool = False
+    pattern_issue_reason: str = ""
+    has_goal_deviation: bool = False
+    goal_deviation_reason: str = ""
+    task_completed: bool = False
+    task_completion_reason: str = ""
 
 
 class TrajectoryLogger:
@@ -161,6 +170,23 @@ class TrajectoryLogger:
         
         self.current_step.monitor_decision = decision
         self.current_step.monitor_feedback = feedback
+    
+    def log_checklist_result(self, checklist: Dict[str, Any]) -> None:
+        """Log the reflector checklist analysis result.
+        
+        Args:
+            checklist: Dictionary containing checklist analysis results
+        """
+        if self.current_step is None:
+            return
+        
+        self.current_step.checklist_result = checklist
+        self.current_step.has_pattern_issue = checklist.get("has_pattern_issue", False)
+        self.current_step.pattern_issue_reason = checklist.get("pattern_issue_reason", "")
+        self.current_step.has_goal_deviation = checklist.get("has_goal_deviation", False)
+        self.current_step.goal_deviation_reason = checklist.get("goal_deviation_reason", "")
+        self.current_step.task_completed = checklist.get("task_completed", False)
+        self.current_step.task_completion_reason = checklist.get("task_completion_reason", "")
     
     def end_step(self) -> None:
         """End the current step and save it."""
@@ -703,6 +729,40 @@ class TrajectoryLogger:
                 <pre>{self._escape_html(step.monitor_feedback)}</pre>
             </div>"""
         
+        # Checklist analysis section (new)
+        checklist_html = ""
+        if step.checklist_result or step.has_pattern_issue or step.has_goal_deviation:
+            pattern_status = "⚠️ YES" if step.has_pattern_issue else "✅ NO"
+            pattern_color = "var(--accent-yellow)" if step.has_pattern_issue else "var(--accent-green)"
+            
+            deviation_status = "⚠️ YES" if step.has_goal_deviation else "✅ NO"
+            deviation_color = "var(--accent-yellow)" if step.has_goal_deviation else "var(--accent-green)"
+            
+            completed_status = "✅ YES" if step.task_completed else "⏳ NO"
+            completed_color = "var(--accent-green)" if step.task_completed else "var(--text-secondary)"
+            
+            checklist_html = f"""
+            <div class="checklist-section" style="background:var(--bg-tertiary);border-radius:8px;padding:15px;margin-top:15px;border:1px solid var(--border-color);">
+                <h4 style="color:var(--accent-blue);margin-bottom:12px;">📋 Reflector Checklist Analysis</h4>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;">
+                    <div style="background:var(--bg-primary);padding:10px;border-radius:6px;text-align:center;">
+                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Pattern Issue</div>
+                        <div style="font-weight:bold;color:{pattern_color};">{pattern_status}</div>
+                    </div>
+                    <div style="background:var(--bg-primary);padding:10px;border-radius:6px;text-align:center;">
+                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Goal Deviation</div>
+                        <div style="font-weight:bold;color:{deviation_color};">{deviation_status}</div>
+                    </div>
+                    <div style="background:var(--bg-primary);padding:10px;border-radius:6px;text-align:center;">
+                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Task Completed</div>
+                        <div style="font-weight:bold;color:{completed_color};">{completed_status}</div>
+                    </div>
+                </div>
+                {f'<div style="margin-top:10px;padding:10px;background:var(--bg-primary);border-radius:6px;border-left:3px solid var(--accent-yellow);"><strong style="color:var(--accent-yellow);">Pattern Issue:</strong><br/>{self._escape_html(step.pattern_issue_reason)}</div>' if step.pattern_issue_reason else ''}
+                {f'<div style="margin-top:10px;padding:10px;background:var(--bg-primary);border-radius:6px;border-left:3px solid var(--accent-red);"><strong style="color:var(--accent-red);">Goal Deviation:</strong><br/>{self._escape_html(step.goal_deviation_reason)}</div>' if step.goal_deviation_reason else ''}
+                {f'<div style="margin-top:10px;padding:10px;background:var(--bg-primary);border-radius:6px;border-left:3px solid var(--accent-blue);"><strong style="color:var(--accent-blue);">Task Status:</strong><br/>{self._escape_html(step.task_completion_reason)}</div>' if step.task_completion_reason else ''}
+            </div>"""
+        
         # Observation text (collapsed by default)
         obs_text_html = f"""
         <div class="observation-text" style="display:none;">
@@ -726,6 +786,7 @@ class TrajectoryLogger:
                     {llm_calls_html}
                 </div>
                 
+                {checklist_html}
                 {monitor_html}
                 {obs_text_html}
             </div>

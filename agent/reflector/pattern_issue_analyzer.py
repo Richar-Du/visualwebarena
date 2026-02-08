@@ -34,7 +34,7 @@ class PatternIssueAnalyzer:
         current_intention: str,
         latest_action: Action,
         high_level_task: str,
-        checklist_raw_response: str,
+        pattern_issue_reason: str = "",
     ) -> Dict[str, Any]:
         """Analyze pattern issue in detail and provide correction suggestions.
 
@@ -44,7 +44,7 @@ class PatternIssueAnalyzer:
             current_intention: Current intention being executed
             latest_action: The most recent action executed
             high_level_task: Original high-level task goal
-            checklist_raw_response: Raw response from initial checklist analysis
+            pattern_issue_reason: Specific reason for pattern issue from checklist
 
         Returns:
             Dictionary containing detailed pattern analysis and correction suggestions
@@ -72,7 +72,7 @@ class PatternIssueAnalyzer:
             current_intention=current_intention,
             latest_action=current_action_str,
             high_level_task=high_level_task,
-            checklist_response=checklist_raw_response,
+            pattern_issue_reason=pattern_issue_reason,
         )
 
         try:
