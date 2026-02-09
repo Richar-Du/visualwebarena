@@ -160,7 +160,7 @@ class GeneralMonitor:
         
         # === Step 2: Call Reflector every step (starting after step 2) ===
         # Also call Reflector when STOP action is issued (regardless of step count)
-        if is_stop_action:
+        if is_stop_action or self.step_count >= 1:
             print(f"🔍 Monitor (Step {self.step_count}): Running Reflector analysis...")
             reflection_result = self._check_action(
                 trajectory=trajectory,
