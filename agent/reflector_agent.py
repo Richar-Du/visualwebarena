@@ -48,6 +48,7 @@ class ReflectorAgent:
         current_observation: Observation,
         context_summary: Dict[str, Any],
         high_level_task: Optional[str] = None,
+        current_url: str = "",
     ) -> Dict[str, Any]:
         """Reflect on execution using structured checklist approach.
 
@@ -60,6 +61,7 @@ class ReflectorAgent:
             current_observation: The observation after action execution
             context_summary: Current context from Context Agent
             high_level_task: Original high-level task goal
+            current_url: Current page URL
 
         Returns:
             Dictionary containing checklist results and metadata
@@ -81,6 +83,7 @@ class ReflectorAgent:
                 latest_action=latest_action,
                 high_level_task=high_level_task,
                 context_summary=context_summary.get("summary", ""),
+                current_url=current_url,
             )
 
             # Initialize pattern issue analysis result

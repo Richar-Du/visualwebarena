@@ -41,6 +41,7 @@ class ChecklistAnalyzer:
         latest_action: Action,
         high_level_task: str,
         context_summary: str = "",
+        current_url: str = "",
     ) -> Dict[str, Any]:
         """Run unified checklist analysis.
 
@@ -74,6 +75,7 @@ class ChecklistAnalyzer:
                     action_text=action_text,
                     high_level_task=high_level_task,
                     context_summary=context_summary,
+                    current_url=current_url,
                 )
                 response = call_llm(self.lm_config, messages).strip()
                 result = self._parse_response(response)
@@ -91,6 +93,7 @@ class ChecklistAnalyzer:
             action_text=action_text,
             high_level_task=high_level_task,
             context_summary=context_summary,
+            current_url=current_url,
         )
 
     def _build_multimodal_prompt(
@@ -104,6 +107,7 @@ class ChecklistAnalyzer:
         action_text: str,
         high_level_task: str,
         context_summary: str = "",
+        current_url: str = "",
     ) -> List[Dict[str, Any]]:
         """Build multimodal prompt for checklist analysis."""
         # Convert numpy arrays to PIL Images
@@ -138,6 +142,7 @@ class ChecklistAnalyzer:
             action_text=action_text,
             high_level_task=high_level_task,
             context_summary=context_summary if context_summary else "No context summary available",
+            current_url=current_url if current_url else "Unknown",
         )
 
         # Build OpenAI Vision API format message with before/after images
@@ -166,6 +171,7 @@ class ChecklistAnalyzer:
         action_text: str,
         high_level_task: str,
         context_summary: str = "",
+        current_url: str = "",
     ) -> Dict[str, Any]:
         """Fallback text-only checklist analysis."""
         # Format recent intents
@@ -189,6 +195,7 @@ class ChecklistAnalyzer:
             action_text=action_text,
             high_level_task=high_level_task,
             context_summary=context_summary if context_summary else "No context summary available",
+            current_url=current_url if current_url else "Unknown",
         )
 
         try:

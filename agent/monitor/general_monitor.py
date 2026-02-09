@@ -345,6 +345,19 @@ class GeneralMonitor:
                 self.feedback_history.append(completion_feedback)
                 # Return should_stop=False to let Actor decide, but provide completion guidance
                 return completion_feedback, False
+            
+            # Default case: no special conditions detected, proceed normally
+            feedback = MonitorFeedback(
+                has_issue=False,
+                prohibited_actions=[],
+                alternative_actions=[],
+                correction_guidance="",
+                context_summary=context_summary,
+                checklist=checklist,
+            )
+            self.feedback_history.append(feedback)
+            return feedback, False
+            
         else:
             print(f"🔍 Monitor (Step {self.step_count}): Skipping Reflector analysis for early steps.")
             feedback = MonitorFeedback(
@@ -370,6 +383,14 @@ class GeneralMonitor:
         recent_intentions = [r["intention"] for r in self.action_history[-5:] if r.get("intention")]
         recent_actions = [r["action"] for r in self.action_history[-5:]]
         
+        # Extract current URL from trajectory
+        current_url = ""
+        state_infos = [item for item in trajectory if isinstance(item, dict) and 'info' in item]
+        if state_infos:
+            last_info = state_infos[-1].get("info", {})
+            if last_info and hasattr(last_info.get("page"), "url"):
+                current_url = last_info["page"].url
+        
         return self.reflector_agent.reflect_execution(
             trajectory=trajectory,
             intentions=recent_intentions,
@@ -379,6 +400,7 @@ class GeneralMonitor:
             current_observation=observation,
             context_summary={"summary": self.context_agent.current_summary or ""},
             high_level_task=self.global_goal,
+            current_url=current_url,
         )
 
     def validate_result(self, question: str, proposed_answer: str, current_observation: Optional[Observation] = None) -> Dict[str, Any]:
