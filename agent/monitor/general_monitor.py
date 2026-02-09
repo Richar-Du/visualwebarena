@@ -103,6 +103,10 @@ class GeneralMonitor:
         self.action_history: List[Dict[str, Any]] = []
         self.feedback_history: List[MonitorFeedback] = []
         self.global_goal: str = ""
+        
+        # STOP attempt tracking (for preventing infinite rejection loops)
+        self.consecutive_stop_attempts: int = 0
+        self.max_stop_attempts: int = 3  # Force-allow after this many consecutive attempts
     
     def initialize(self, global_goal: str) -> None:
         """Initialize monitor for a new task."""
@@ -110,6 +114,7 @@ class GeneralMonitor:
         self.step_count = 0
         self.action_history.clear()
         self.feedback_history.clear()
+        self.consecutive_stop_attempts = 0
         
         # Reset capability agents
         self.context_agent.reset()
@@ -166,17 +171,96 @@ class GeneralMonitor:
             
             checklist = reflection_result.get("checklist", {})
             has_pattern_issue = checklist.get("has_pattern_issue", False)
-            has_goal_deviation = checklist.get("has_goal_deviation", False)
             task_completed = checklist.get("task_completed", False)
-            task_completion_reason = checklist.get("task_completion_reason", "")
+            next_step_suggestion = checklist.get("next_step_suggestion", "")
             
-            # === Handle STOP action based on checklist's task_completed ===
+            # Backward compatibility
+            has_goal_deviation = checklist.get("has_goal_deviation", False)
+            pattern_issue_reason = checklist.get("pattern_issue_reason", "")
+            
+            # === Handle STOP action: Actor-led with Monitor assistance ===
             if is_stop_action:
-                if task_completed and not has_goal_deviation:
-                    # Checklist confirms task is complete AND no goal deviation, allow STOP
-                    print(f"✅ Monitor: STOP action validated by checklist - task is complete")
-                    if task_completion_reason:
-                        print(f"   Reason: {task_completion_reason[:200]}")
+                self.consecutive_stop_attempts += 1
+                
+                # === Determine if there's a CLEAR reason to reject STOP ===
+                should_reject = False
+                rejection_reason = ""
+                
+                # Check 1: Force-allow after max consecutive attempts (prevent deadlock)
+                if self.consecutive_stop_attempts >= self.max_stop_attempts:
+                    print(f"✅ Monitor: STOP force-allowed after {self.consecutive_stop_attempts} consecutive attempts")
+                    self.consecutive_stop_attempts = 0
+                    feedback = MonitorFeedback(
+                        has_issue=False,
+                        prohibited_actions=[],
+                        alternative_actions=[],
+                        correction_guidance="",
+                        context_summary=context_summary,
+                        checklist=checklist,
+                    )
+                    self.feedback_history.append(feedback)
+                    return feedback, True  # Force-allow STOP
+                
+                # Check 2: Pattern issue detected - clear rejection reason
+                if has_pattern_issue and pattern_issue_reason:
+                    should_reject = True
+                    rejection_reason = f"Pattern issue: {pattern_issue_reason}"
+                
+                # Check 3: next_step_suggestion contains clear rejection indicators
+                if next_step_suggestion:
+                    suggestion_lower = next_step_suggestion.lower()
+                    
+                    # Keywords that indicate task is CLEARLY not complete
+                    rejection_keywords = [
+                        "wrong product", "wrong color", "wrong item",
+                        "go_back", "go back",
+                        "not the correct", "mismatch",
+                        "task not complete", "not yet complete", "not complete"
+                    ]
+                    
+                    for keyword in rejection_keywords:
+                        if keyword in suggestion_lower:
+                            should_reject = True
+                            rejection_reason = next_step_suggestion
+                            break
+                
+                # Check 4: If task_completed is True, definitely allow
+                if task_completed:
+                    should_reject = False  # Override any rejection
+                
+                # === Execute decision ===
+                if should_reject:
+                    print(f"❌ Monitor: STOP rejected - Clear reason: {rejection_reason[:100]}...")
+                    print(f"   (Attempt {self.consecutive_stop_attempts}/{self.max_stop_attempts})")
+                    
+                    prohibited_actions = ["stop - Issue detected that prevents completion"]
+                    alternative_actions = [next_step_suggestion] if next_step_suggestion else []
+                    
+                    # Add specific actions based on suggestion content
+                    if next_step_suggestion:
+                        suggestion_lower = next_step_suggestion.lower()
+                        if "go_back" in suggestion_lower or "go back" in suggestion_lower:
+                            alternative_actions.insert(0, "go_back - Return to previous page")
+                        if "wrong" in suggestion_lower:
+                            prohibited_actions.append("Do not complete with wrong product")
+                    
+                    rejection_feedback = MonitorFeedback(
+                        has_issue=True,
+                        prohibited_actions=prohibited_actions,
+                        alternative_actions=alternative_actions,
+                        correction_guidance=rejection_reason,
+                        context_summary=context_summary,
+                        checklist=checklist,
+                    )
+                    self.feedback_history.append(rejection_feedback)
+                    return rejection_feedback, False  # Reject STOP
+                else:
+                    # No clear rejection reason - trust Actor's judgment
+                    print(f"✅ Monitor: STOP allowed - No clear rejection reason, trusting Actor")
+                    if next_step_suggestion:
+                        print(f"   Advisor note: {next_step_suggestion[:150]}...")
+                    
+                    self.consecutive_stop_attempts = 0  # Reset counter on success
                     feedback = MonitorFeedback(
                         has_issue=False,
                         prohibited_actions=[],
@@ -187,142 +271,14 @@ class GeneralMonitor:
                     )
                     self.feedback_history.append(feedback)
                     return feedback, True  # Allow STOP
-                else:
-                    # STOP rejected - determine the specific reason
-                    goal_deviation_reason = checklist.get("goal_deviation_reason", "")
-                    pattern_issue_reason = checklist.get("pattern_issue_reason", "")
-                    
-                    # Build rejection reason based on what was detected
-                    rejection_reasons = []
-                    prohibited_actions = ["stop - The current state does not match the task goal"]
-                    alternative_actions = []
-                    
-                    if has_goal_deviation and goal_deviation_reason:
-                        print(f"❌ Monitor: STOP rejected - Goal deviation detected!")
-                        print(f"   Deviation: {goal_deviation_reason[:200]}")
-                        rejection_reasons.append(f"GOAL DEVIATION: {goal_deviation_reason}")
-                        
-                        # Add specific guidance based on deviation type
-                        reason_lower = goal_deviation_reason.lower()
-                        if "attribute" in reason_lower or "color" in reason_lower or "price" in reason_lower:
-                            prohibited_actions.append("Do not complete with the wrong product")
-                            alternative_actions.extend([
-                                "go_back - Return to search results",
-                                "Find a product matching the required attributes"
-                            ])
-                        elif "pagination" in reason_lower or "page" in reason_lower:
-                            prohibited_actions.append("Do not continue browsing pages")
-                            alternative_actions.extend([
-                                "go_back - Return to search page",
-                                "Change search keywords to find the correct product"
-                            ])
-                        elif "search_pattern" in reason_lower or "scroll" in reason_lower:
-                            prohibited_actions.append("Stop the current inefficient pattern")
-                            alternative_actions.extend([
-                                "go_back - Return to refine search",
-                                "Try different search terms or filters"
-                            ])
-                        else:
-                            alternative_actions.append("Review the task and adjust approach")
-                    
-                    if has_pattern_issue and pattern_issue_reason:
-                        print(f"❌ Monitor: STOP rejected - Pattern issue detected!")
-                        print(f"   Pattern: {pattern_issue_reason[:200]}")
-                        rejection_reasons.append(f"PATTERN ISSUE: {pattern_issue_reason}")
-                        alternative_actions.append("Break the repetitive pattern before completing")
-                    
-                    if not rejection_reasons and task_completion_reason:
-                        # No specific issue detected, use task_completion_reason
-                        print(f"❌ Monitor: STOP rejected - Task is NOT complete")
-                        print(f"   Reason: {task_completion_reason[:200]}")
-                        rejection_reasons.append(task_completion_reason)
-                        alternative_actions.append("Continue working towards the task goal")
-                    
-                    if not rejection_reasons:
-                        rejection_reasons.append("Task is not yet complete. Please continue working towards the objective.")
-                        alternative_actions.append("Continue with the task")
-                    
-                    # Combine all rejection reasons into guidance
-                    rejection_guidance = " | ".join(rejection_reasons)
-                    
-                    rejection_feedback = MonitorFeedback(
-                        has_issue=True,
-                        prohibited_actions=prohibited_actions,
-                        alternative_actions=alternative_actions,
-                        correction_guidance=rejection_guidance,
-                        context_summary=context_summary,
-                        checklist=checklist,
-                    )
-                    self.feedback_history.append(rejection_feedback)
-                    return rejection_feedback, False  # Reject STOP, continue execution
             
-            # Get goal_deviation_reason from checklist
-            goal_deviation_reason = checklist.get("goal_deviation_reason", "")
+            # Reset STOP counter for non-STOP actions
+            self.consecutive_stop_attempts = 0
             
-            # === Handle goal deviation with detailed feedback ===
-            if has_goal_deviation:
-                print(f"⚠️ Monitor: Goal deviation detected!")
-                if goal_deviation_reason:
-                    print(f"   Reason: {goal_deviation_reason[:200]}")
-                
-                # Determine suggested action based on deviation type
-                suggested_actions = []
-                prohibited_actions = []
-                
-                reason_lower = goal_deviation_reason.lower()
-                if "attribute" in reason_lower or "color" in reason_lower or "price" in reason_lower or "mismatch" in reason_lower:
-                    # Product attribute mismatch - suggest going back
-                    prohibited_actions = [
-                        "Do not add this item to cart or wishlist",
-                        "Do not proceed with checkout for this item"
-                    ]
-                    suggested_actions = [
-                        "go_back - Return to search results to find the correct item",
-                        "Look for items matching the required attributes"
-                    ]
-                elif "pagination" in reason_lower or "page" in reason_lower:
-                    # Excessive pagination - suggest returning to start or changing query
-                    prohibited_actions = [
-                        "Do NOT continue to next page or scroll further",
-                        "Do NOT click on items on this page - they are unlikely to match",
-                        "Stop browsing through pagination"
-                    ]
-                    suggested_actions = [
-                        "go_back - Return to search page and try different search keywords",
-                        "type [search_box] [more_specific_keywords] - Use more specific search terms",
-                        "Use category filters to narrow down results"
-                    ]
-                elif "search_pattern" in reason_lower or "scroll" in reason_lower:
-                    # Inefficient search pattern - suggest changing strategy
-                    prohibited_actions = [
-                        "Stop scrolling through the same results",
-                        "Do not continue clicking items in current list"
-                    ]
-                    suggested_actions = [
-                        "go_back - Return to search page",
-                        "type [search_box_id] [new_query] - Try different search keywords"
-                    ]
-                else:
-                    # Task type violation - general guidance
-                    prohibited_actions = ["Avoid actions that deviate from the task goal"]
-                    suggested_actions = ["Review the task objective and adjust your approach"]
-                
-                feedback = MonitorFeedback(
-                    has_issue=True,
-                    prohibited_actions=prohibited_actions,
-                    alternative_actions=suggested_actions,
-                    correction_guidance=goal_deviation_reason if goal_deviation_reason else "Goal deviation detected. Please review your actions.",
-                    context_summary=context_summary,
-                    checklist=checklist,
-                )
-                
-                print(f"📋 Deviation Guidance: {feedback.correction_guidance[:100]}...")
-                self.feedback_history.append(feedback)
-                return feedback, False
+            # === Use next_step_suggestion as primary guidance for non-STOP actions ===
             
-            # === Handle pattern issue with PatternIssueAnalyzer ===
+            # Handle pattern issues with additional PatternIssueAnalyzer
             if has_pattern_issue:
-                pattern_issue_reason = checklist.get("pattern_issue_reason", "")
                 print(f"⚠️ Monitor: Pattern issue detected!")
                 if pattern_issue_reason:
                     print(f"   Reason: {pattern_issue_reason[:200]}")
@@ -339,11 +295,14 @@ class GeneralMonitor:
                     pattern_issue_reason=pattern_issue_reason,
                 )
                 
+                # Combine pattern analysis with next_step_suggestion
+                combined_guidance = next_step_suggestion if next_step_suggestion else issue_analysis.get("correction_guidance", pattern_issue_reason)
+                
                 feedback = MonitorFeedback(
                     has_issue=True,
                     prohibited_actions=issue_analysis.get("prohibited_actions", []),
-                    alternative_actions=issue_analysis.get("alternative_actions", []),
-                    correction_guidance=issue_analysis.get("correction_guidance", pattern_issue_reason),
+                    alternative_actions=issue_analysis.get("alternative_actions", []) + ([next_step_suggestion] if next_step_suggestion else []),
+                    correction_guidance=combined_guidance,
                     context_summary=context_summary,
                     checklist=checklist,
                 )
@@ -352,27 +311,33 @@ class GeneralMonitor:
                 self.feedback_history.append(feedback)
                 return feedback, False
             
-            # No issues detected - check for task completion
-            feedback = MonitorFeedback(
-                has_issue=False,
-                prohibited_actions=[],
-                alternative_actions=[],
-                correction_guidance="",
-                context_summary=context_summary,
-                checklist=checklist,
-            )
+            # === Normal case: provide next_step_suggestion as guidance ===
+            if next_step_suggestion and not task_completed:
+                # Provide proactive guidance from Global Advisor
+                print(f"💡 Monitor: Global Advisor suggests: {next_step_suggestion[:100]}...")
+                
+                feedback = MonitorFeedback(
+                    has_issue=False,
+                    prohibited_actions=[],
+                    alternative_actions=[next_step_suggestion],
+                    correction_guidance=next_step_suggestion,
+                    context_summary=context_summary,
+                    checklist=checklist,
+                )
+                self.feedback_history.append(feedback)
+                return feedback, False
             
             # Check for task completion - generate feedback for Actor to issue STOP
             if task_completed:
                 print("✅ Monitor: Task appears complete, guiding Actor to issue STOP...")
                 # Create feedback to guide Actor to issue STOP action
-                completion_guidance = task_completion_reason if task_completion_reason else \
+                completion_guidance = next_step_suggestion if next_step_suggestion else \
                     "The task appears to be complete based on the current state."
                 completion_feedback = MonitorFeedback(
                     has_issue=False,  # Not an issue, but guidance
                     prohibited_actions=[],
                     alternative_actions=["stop [your_answer]"],
-                    correction_guidance=f"{completion_guidance} Please issue a STOP action with the appropriate answer.",
+                    correction_guidance=f"{completion_guidance}",
                     context_summary=context_summary,
                     is_completion_guidance=True,  # Enable prompt injection for completion guidance
                     checklist=checklist,

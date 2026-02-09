@@ -211,7 +211,7 @@ class ChecklistAnalyzer:
             response: Raw LLM response containing JSON
 
         Returns:
-            Dictionary with checklist values including task_completion_reason
+            Dictionary with checklist values including next_step_suggestion
         """
         result = self._get_default_result()
 
@@ -225,17 +225,22 @@ class ChecklistAnalyzer:
                 # Extract boolean values with type conversion
                 if "has_pattern_issue" in parsed:
                     result["has_pattern_issue"] = self._to_bool(parsed["has_pattern_issue"])
-                if "has_goal_deviation" in parsed:
-                    result["has_goal_deviation"] = self._to_bool(parsed["has_goal_deviation"])
                 if "task_completed" in parsed:
                     result["task_completed"] = self._to_bool(parsed["task_completed"])
-                # Extract pattern_issue_reason (new field)
+                    
+                # Extract pattern_issue_reason
                 if "pattern_issue_reason" in parsed:
                     result["pattern_issue_reason"] = str(parsed["pattern_issue_reason"])
-                # Extract goal_deviation_reason
+                    
+                # Extract next_step_suggestion (new field replacing goal_deviation)
+                if "next_step_suggestion" in parsed:
+                    result["next_step_suggestion"] = str(parsed["next_step_suggestion"])
+                    
+                # Backward compatibility: also handle old goal_deviation fields
+                if "has_goal_deviation" in parsed:
+                    result["has_goal_deviation"] = self._to_bool(parsed["has_goal_deviation"])
                 if "goal_deviation_reason" in parsed:
                     result["goal_deviation_reason"] = str(parsed["goal_deviation_reason"])
-                # Extract task_completion_reason
                 if "task_completion_reason" in parsed:
                     result["task_completion_reason"] = str(parsed["task_completion_reason"])
 
@@ -265,23 +270,29 @@ class ChecklistAnalyzer:
             result["has_pattern_issue"] = True
             result["pattern_issue_reason"] = "repeated_clicks: Same element clicked multiple times."
 
-        # Goal deviation detection
-        if "goal deviation: true" in response_lower or "has_goal_deviation: true" in response_lower:
-            result["has_goal_deviation"] = True
-            result["goal_deviation_reason"] = "Goal deviation detected based on keyword analysis."
-        elif "drifting" in response_lower or "off track" in response_lower:
-            result["has_goal_deviation"] = True
-            result["goal_deviation_reason"] = "Agent appears to be drifting off track."
-        elif "wrong color" in response_lower or "wrong price" in response_lower:
-            result["has_goal_deviation"] = True
-            result["goal_deviation_reason"] = "Product attribute mismatch detected."
+        # Next step suggestion extraction
+        if "next_step_suggestion" in response_lower:
+            # Try to extract next step suggestion from context
+            result["next_step_suggestion"] = "Continue with the task based on current context."
+        elif "task complete" in response_lower or "issue stop" in response_lower:
+            result["task_completed"] = True
+            result["next_step_suggestion"] = "TASK COMPLETE! Issue stop action to finish."
+        elif "go back" in response_lower or "go_back" in response_lower:
+            result["next_step_suggestion"] = "Navigate back using go_back action."
+        elif "wrong" in response_lower and ("product" in response_lower or "color" in response_lower):
+            result["next_step_suggestion"] = "Wrong product detected. Use go_back and find the correct product."
+        else:
+            result["next_step_suggestion"] = "Continue working towards the task goal."
 
         # Task completion detection
         if "task_completed: true" in response_lower or "task is complete" in response_lower:
             result["task_completed"] = True
-            result["task_completion_reason"] = "Task appears complete based on keyword detection."
-        else:
-            result["task_completion_reason"] = "Task not yet complete based on keyword detection."
+            result["next_step_suggestion"] = "TASK COMPLETE! Issue stop action with appropriate answer."
+
+        # Backward compatibility: goal deviation detection
+        if "goal deviation: true" in response_lower or "has_goal_deviation: true" in response_lower:
+            result["has_goal_deviation"] = True
+            result["goal_deviation_reason"] = "Goal deviation detected based on keyword analysis."
 
         return result
 
@@ -290,10 +301,12 @@ class ChecklistAnalyzer:
         return {
             "has_pattern_issue": False,
             "pattern_issue_reason": "",  # Field for pattern issue explanation
-            "has_goal_deviation": False,
-            "goal_deviation_reason": "",  # Field for goal deviation explanation
             "task_completed": False,
-            "task_completion_reason": "",  # Field for task completion explanation
+            "next_step_suggestion": "",  # NEW: Global advisor's next step suggestion
+            # Backward compatibility fields (may be empty in new schema)
+            "has_goal_deviation": False,
+            "goal_deviation_reason": "",
+            "task_completion_reason": "",
         }
 
     def _to_bool(self, value: Any) -> bool:
