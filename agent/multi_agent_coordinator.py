@@ -692,8 +692,10 @@ class MultiAgentCoordinator:
                         latest_intention=extracted_intention
                     )
 
-            # Log actor agent response summary with full LLM response
+            # Log actor agent response summary with full LLM prompt and response
+            llm_prompt = execution_result.get("llm_prompt", "") if execution_result else ""
             actor_response = {
+                "llm_prompt": llm_prompt,
                 "llm_response": llm_response,  # Complete LLM output including <think> and <action>
                 "action_type": action_type,
                 "fulfilled": intention_fulfilled,
@@ -794,10 +796,11 @@ class MultiAgentCoordinator:
         
         # Log Actor LLM call to trajectory logger (must be after action_str is defined)
         llm_response = execution_result.get("llm_response", "") if execution_result else ""
+        llm_prompt = execution_result.get("llm_prompt", "") if execution_result else ""
         intention_fulfilled = execution_result.get("intention_fulfilled", False) if execution_result else False
         self.trajectory_logger.log_llm_call(
             agent_name="Actor",
-            prompt=f"Goal: {current_intention}\nMonitor Feedback: {self.monitor_feedback or 'None'}",
+            prompt=llm_prompt or f"Goal: {current_intention}\nMonitor Feedback: {self.monitor_feedback or 'None'}",
             response=llm_response or "",
             parsed_result={
                 "action_type": str(action_type),
@@ -842,10 +845,9 @@ class MultiAgentCoordinator:
             checklist_data = monitor_feedback.checklist if monitor_feedback.checklist else {
                 "has_pattern_issue": monitor_feedback.has_issue,
                 "pattern_issue_reason": "",
-                "has_goal_deviation": False,
-                "goal_deviation_reason": "",
-                "task_completed": should_stop,
-                "task_completion_reason": "",
+                "should_stop": should_stop,
+                "stop_reason": "",
+                "next_step_suggestion": "",
             }
             
             reflection_result = {
@@ -861,6 +863,8 @@ class MultiAgentCoordinator:
             
             # Log monitor response with detailed checklist information
             self.log_agent_response("monitor", step_number, {
+                "reflector_llm_prompt": checklist_data.get("llm_prompt", "")[:2000],
+                "reflector_llm_response": checklist_data.get("raw_response", "")[:2000],
                 "has_issue": monitor_feedback.has_issue,
                 "prohibited_actions": monitor_feedback.prohibited_actions,
                 "alternative_actions": monitor_feedback.alternative_actions,
@@ -869,27 +873,28 @@ class MultiAgentCoordinator:
                 "checklist": {
                     "has_pattern_issue": checklist_data.get("has_pattern_issue", False),
                     "pattern_issue_reason": checklist_data.get("pattern_issue_reason", "")[:200],
-                    "has_goal_deviation": checklist_data.get("has_goal_deviation", False),
-                    "goal_deviation_reason": checklist_data.get("goal_deviation_reason", "")[:200],
-                    "task_completed": checklist_data.get("task_completed", False),
-                    "task_completion_reason": checklist_data.get("task_completion_reason", "")[:200],
+                    "should_stop": checklist_data.get("should_stop", False),
+                    "stop_reason": checklist_data.get("stop_reason", "")[:200],
+                    "next_step_suggestion": checklist_data.get("next_step_suggestion", "")[:200],
                 },
             })
             
             # Log checklist result to trajectory logger for HTML report
             self.trajectory_logger.log_checklist_result(checklist_data)
             
-            # Log to trajectory logger for HTML report
+            # Log to trajectory logger for HTML report - use actual Reflector LLM prompt/response
+            reflector_prompt = checklist_data.get("llm_prompt", f"Action: {action_str}\nIntention: {current_intention}")
+            reflector_raw_response = checklist_data.get("raw_response", self.monitor_feedback or "No feedback")
             self.trajectory_logger.log_llm_call(
-                agent_name="Monitor",
-                prompt=f"Action: {action_str}\nIntention: {current_intention}",
-                response=self.monitor_feedback or "No feedback",
+                agent_name="Reflector",
+                prompt=reflector_prompt,
+                response=reflector_raw_response,
                 parsed_result={
                     "has_issue": monitor_feedback.has_issue,
                     "guidance": monitor_feedback.correction_guidance[:100] if monitor_feedback.correction_guidance else "",
                     "has_pattern_issue": checklist_data.get("has_pattern_issue", False),
-                    "has_goal_deviation": checklist_data.get("has_goal_deviation", False),
-                    "task_completed": checklist_data.get("task_completed", False),
+                    "should_stop": checklist_data.get("should_stop", False),
+                    "stop_reason": checklist_data.get("stop_reason", ""),
                 }
             )
             self.trajectory_logger.log_monitor_feedback(
@@ -898,7 +903,7 @@ class MultiAgentCoordinator:
             )
             
             # Check for task completion - ONLY based on checklist's decision (should_stop)
-            # Actor's STOP action alone doesn't terminate; checklist must confirm task_completed
+            # Actor's STOP action alone doesn't terminate; checklist must confirm should_stop
             if should_stop:
                 is_stop_action = executed_action.get("action_type") == ActionTypes.STOP
                 completion_reason = "Task completed (validated by checklist)" if is_stop_action else \

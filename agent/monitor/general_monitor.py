@@ -36,41 +36,53 @@ class MonitorFeedback:
     
     def to_prompt_injection(self) -> str:
         """Generate the prompt injection string for Actor."""
-        # Generate feedback for issues OR completion guidance
-        if not self.has_issue and not self.is_completion_guidance:
-            return ""
-        
-        lines = []
-        lines.append("=" * 60)
-        
-        if self.is_completion_guidance:
-            lines.append("✅ MONITOR FEEDBACK - TASK COMPLETION DETECTED ✅")
-        else:
-            lines.append("⚠️ MONITOR FEEDBACK - PLEASE READ CAREFULLY ⚠️")
-        lines.append("")
-        
-        if self.correction_guidance:
-            lines.append(f"📋 GUIDANCE: {self.correction_guidance}")
-            lines.append("")
-        
-        if self.prohibited_actions:
-            lines.append("🚫 PROHIBITED ACTIONS (DO NOT DO THESE):")
-            for i, action in enumerate(self.prohibited_actions[:3], 1):
-                lines.append(f"   {i}. {action}")
-            lines.append("")
-        
-        if self.alternative_actions:
+        # Case 1: Issue detected or completion guidance
+        if self.has_issue or self.is_completion_guidance:
+            lines = []
+            lines.append("=" * 60)
+            
             if self.is_completion_guidance:
-                lines.append("✅ RECOMMENDED ACTION:")
+                lines.append("✅ MONITOR FEEDBACK - TASK COMPLETION DETECTED ✅")
             else:
-                lines.append("✅ SUGGESTED ALTERNATIVES (TRY THESE):")
-            for i, action in enumerate(self.alternative_actions[:3], 1):
-                lines.append(f"   {i}. {action}")
+                lines.append("⚠️ MONITOR FEEDBACK - PLEASE READ CAREFULLY ⚠️")
             lines.append("")
+            
+            if self.correction_guidance:
+                lines.append(f"📋 GUIDANCE: {self.correction_guidance}")
+                lines.append("")
+            
+            if self.prohibited_actions:
+                lines.append("🚫 PROHIBITED ACTIONS (DO NOT DO THESE):")
+                for i, action in enumerate(self.prohibited_actions[:3], 1):
+                    lines.append(f"   {i}. {action}")
+                lines.append("")
+            
+            if self.alternative_actions:
+                if self.is_completion_guidance:
+                    lines.append("✅ RECOMMENDED ACTION:")
+                else:
+                    lines.append("✅ SUGGESTED ALTERNATIVES (TRY THESE):")
+                for i, action in enumerate(self.alternative_actions[:3], 1):
+                    lines.append(f"   {i}. {action}")
+                lines.append("")
+            
+            lines.append("=" * 60)
+            
+            return "\n".join(lines)
         
-        lines.append("=" * 60)
+        # Case 2: Normal case with next_step_suggestion
+        if self.correction_guidance:
+            lines = []
+            lines.append("=" * 60)
+            lines.append("💡 MONITOR GUIDANCE - NEXT STEP SUGGESTION 💡")
+            lines.append("")
+            lines.append(f"📋 SUGGESTION: {self.correction_guidance}")
+            lines.append("")
+            lines.append("=" * 60)
+            return "\n".join(lines)
         
-        return "\n".join(lines)
+        # Case 3: No feedback at all
+        return ""
 
 
 class GeneralMonitor:
@@ -273,23 +285,14 @@ class GeneralMonitor:
             
             # === Use next_step_suggestion as primary guidance for non-STOP actions ===
             
-            # Handle pattern issues with additional PatternIssueAnalyzer
+            # Handle pattern issues using Reflector's pre-computed analysis
             if has_pattern_issue:
                 print(f"⚠️ Monitor: Pattern issue detected!")
                 if pattern_issue_reason:
                     print(f"   Reason: {pattern_issue_reason[:200]}")
                 
-                recent_intents = [r["intention"] for r in self.action_history[-5:] if r.get("intention")]
-                recent_actions = [r["action"] for r in self.action_history[-5:]]
-                
-                issue_analysis = self.pattern_issue_analyzer.analyze_pattern_issue(
-                    recent_intents=recent_intents,
-                    recent_actions=recent_actions,
-                    current_intention=intention or self.global_goal,
-                    latest_action=action,
-                    high_level_task=self.global_goal,
-                    pattern_issue_reason=pattern_issue_reason,
-                )
+                # Use pattern_issue_analysis already computed by ReflectorAgent
+                issue_analysis = checklist.get("pattern_issue_analysis", {})
                 
                 # Combine pattern analysis with next_step_suggestion
                 combined_guidance = next_step_suggestion if next_step_suggestion else issue_analysis.get("correction_guidance", pattern_issue_reason)

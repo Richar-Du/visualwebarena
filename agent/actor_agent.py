@@ -89,6 +89,7 @@ class ActorAgent:
             # Extract action, LLM response, and extracted intention
             action = result["action"]
             llm_response = result["llm_response"]
+            llm_prompt = result.get("llm_prompt", "")
             extracted_intention = result.get("extracted_intention", intention)
 
             # Validate the generated action (execution will be handled externally)
@@ -115,6 +116,7 @@ class ActorAgent:
                 "intention_fulfilled": False,  # Default to False, will be updated after execution
                 "execution_history_length": len(self.intention_history),
                 "llm_response": llm_response,
+                "llm_prompt": llm_prompt,
                 "response": f"LLM Response: {llm_response[:200]}{'...' if len(llm_response) > 200 else ''}",
             }
 

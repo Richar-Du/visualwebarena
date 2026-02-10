@@ -60,8 +60,9 @@ class StepRecord:
     checklist_result: Dict[str, Any] = field(default_factory=dict)
     has_pattern_issue: bool = False
     pattern_issue_reason: str = ""
-    task_completed: bool = False
-    next_step_suggestion: str = ""  # NEW: Global Advisor's next step suggestion
+    should_stop: bool = False
+    stop_reason: str = ""
+    next_step_suggestion: str = ""
 
 
 class TrajectoryLogger:
@@ -181,7 +182,8 @@ class TrajectoryLogger:
         self.current_step.checklist_result = checklist
         self.current_step.has_pattern_issue = checklist.get("has_pattern_issue", False)
         self.current_step.pattern_issue_reason = checklist.get("pattern_issue_reason", "")
-        self.current_step.task_completed = checklist.get("task_completed", False)
+        self.current_step.should_stop = checklist.get("should_stop", False)
+        self.current_step.stop_reason = checklist.get("stop_reason", "")
         self.current_step.next_step_suggestion = checklist.get("next_step_suggestion", "")
     
     def end_step(self) -> None:
@@ -731,8 +733,8 @@ class TrajectoryLogger:
             pattern_status = "⚠️ YES" if step.has_pattern_issue else "✅ NO"
             pattern_color = "var(--accent-yellow)" if step.has_pattern_issue else "var(--accent-green)"
             
-            completed_status = "✅ YES" if step.task_completed else "⏳ NO"
-            completed_color = "var(--accent-green)" if step.task_completed else "var(--text-secondary)"
+            completed_status = "✅ YES" if step.should_stop else "⏳ NO"
+            completed_color = "var(--accent-green)" if step.should_stop else "var(--text-secondary)"
             
             checklist_html = f"""
             <div class="checklist-section" style="background:var(--bg-tertiary);border-radius:8px;padding:15px;margin-top:15px;border:1px solid var(--border-color);">
@@ -743,11 +745,12 @@ class TrajectoryLogger:
                         <div style="font-weight:bold;color:{pattern_color};">{pattern_status}</div>
                     </div>
                     <div style="background:var(--bg-primary);padding:10px;border-radius:6px;text-align:center;">
-                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Task Completed</div>
+                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Should Stop</div>
                         <div style="font-weight:bold;color:{completed_color};">{completed_status}</div>
                     </div>
                 </div>
                 {f'<div style="margin-top:10px;padding:10px;background:var(--bg-primary);border-radius:6px;border-left:3px solid var(--accent-yellow);"><strong style="color:var(--accent-yellow);">Pattern Issue:</strong><br/>{self._escape_html(step.pattern_issue_reason)}</div>' if step.pattern_issue_reason else ''}
+                {f'<div style="margin-top:10px;padding:10px;background:var(--bg-primary);border-radius:6px;border-left:3px solid var(--accent-green);"><strong style="color:var(--accent-green);">Stop Reason:</strong><br/>{self._escape_html(step.stop_reason)}</div>' if step.stop_reason else ''}
                 {f'<div style="margin-top:10px;padding:12px;background:var(--bg-primary);border-radius:6px;border-left:3px solid var(--accent-blue);"><strong style="color:var(--accent-blue);">💡 Next Step Suggestion:</strong><br/><span style="color:var(--text-primary);font-size:14px;">{self._escape_html(step.next_step_suggestion)}</span></div>' if step.next_step_suggestion else ''}
             </div>"""
         

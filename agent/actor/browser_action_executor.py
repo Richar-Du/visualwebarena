@@ -80,7 +80,7 @@ class BrowserActionExecutor:
         has_input_images = images is not None and len(images) > 0
         if self.is_multimodal and (current_image is not None or has_input_images):
             try:
-                response = self._execute_multimodal(
+                response, prompt_text = self._execute_multimodal(
                     intention=intention,
                     observation=obs,
                     url=url,
@@ -91,7 +91,7 @@ class BrowserActionExecutor:
                 )
             except Exception as e:
                 print(f"Multimodal action execution failed: {e}, falling back to text-only")
-                response = self._execute_text_only(
+                response, prompt_text = self._execute_text_only(
                     intention=intention,
                     observation=obs,
                     url=url,
@@ -100,7 +100,7 @@ class BrowserActionExecutor:
                 )
         else:
             # Fallback to text-only
-            response = self._execute_text_only(
+            response, prompt_text = self._execute_text_only(
                 intention=intention,
                 observation=obs,
                 url=url,
@@ -124,6 +124,7 @@ class BrowserActionExecutor:
         return {
             "action": action,
             "llm_response": response,
+            "llm_prompt": prompt_text,
             "intention": intention,  # Original high-level intention (user_goal)
             "extracted_intention": extracted_intention,  # LLM's reasoning from <think> tags
         }
@@ -201,7 +202,7 @@ class BrowserActionExecutor:
         messages = [{"role": "user", "content": content}]
 
         response = call_llm(self.lm_config, messages).strip()
-        return response
+        return response, prompt_text
 
     def _execute_text_only(
         self,
@@ -246,7 +247,7 @@ class BrowserActionExecutor:
             self.lm_config, [{"role": "user", "content": prompt}]
         ).strip()
 
-        return response
+        return response, prompt
 
     def _extract_action(self, response: str) -> str:
         """Extract action from LLM response.

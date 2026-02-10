@@ -80,6 +80,10 @@ class ChecklistAnalyzer:
                 response = call_llm(self.lm_config, messages).strip()
                 result = self._parse_response(response)
                 result["raw_response"] = response
+                # Store the prompt text for logging
+                # Extract text portions from messages for logging
+                prompt_parts = [item.get("text", "") for item in messages[0]["content"] if item.get("type") == "text"]
+                result["llm_prompt"] = "\n".join(prompt_parts)
                 return result
             except Exception as e:
                 print(f"Multimodal checklist analysis failed: {e}, falling back to text-only")
@@ -204,11 +208,13 @@ class ChecklistAnalyzer:
             ).strip()
             result = self._parse_response(response)
             result["raw_response"] = response
+            result["llm_prompt"] = prompt_text
             return result
         except Exception as e:
             print(f"Text-only checklist failed: {e}")
             result = self._get_default_result()
             result["raw_response"] = f"Error: {e}"
+            result["llm_prompt"] = prompt_text
             return result
 
     def _parse_response(self, response: str) -> Dict[str, Any]:

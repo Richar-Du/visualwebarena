@@ -112,16 +112,19 @@ class ReflectorAgent:
                         "raw_response": f"Error: {e}",
                     }
 
-            # Build reflection result - only include recent intentions, actions, and current screenshot
+            # Build reflection result - pass through all checklist fields
             reflection = {
                 "recent_intentions": recent_intents,
                 "recent_actions": recent_actions,
                 "current_screenshot": image_after,
                 "checklist": {
                     "has_pattern_issue": checklist_result.get("has_pattern_issue", False),
-                    "has_goal_deviation": checklist_result.get("has_goal_deviation", False),
-                    "task_completed": checklist_result.get("task_completed", False),
+                    "pattern_issue_reason": checklist_result.get("pattern_issue_reason", ""),
+                    "should_stop": checklist_result.get("should_stop", False),
+                    "stop_reason": checklist_result.get("stop_reason", ""),
+                    "next_step_suggestion": checklist_result.get("next_step_suggestion", ""),
                     "raw_response": checklist_result.get("raw_response", ""),
+                    "llm_prompt": checklist_result.get("llm_prompt", ""),
                 },
                 "reflection_number": len(self.reflection_history) + 1,
             }
@@ -143,7 +146,10 @@ class ReflectorAgent:
                 "current_screenshot": image_after,
                 "checklist": {
                     "has_pattern_issue": False,
-                    "task_completed": False,
+                    "pattern_issue_reason": "",
+                    "should_stop": False,
+                    "stop_reason": "",
+                    "next_step_suggestion": "",
                 },
                 "reflection_number": len(self.reflection_history) + 1,
                 "error": str(e),
