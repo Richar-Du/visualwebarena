@@ -14,6 +14,7 @@ from PIL import Image
 import numpy as np
 
 from browser_env import Action, Trajectory
+from browser_env.actions import ActionTypes
 from browser_env.utils import Observation, pil_to_b64
 from llms import lm_config, call_llm
 
@@ -168,7 +169,7 @@ class GeneralMonitor:
         context_summary = context_result.get("summary", "")
         
         # Check if this is a STOP action
-        is_stop_action = action.get("action_type") == "STOP"
+        is_stop_action = action.get("action_type") == ActionTypes.STOP
         
         # === Step 2: Call Reflector every step (starting after step 2) ===
         # Also call Reflector when STOP action is issued (regardless of step count)
