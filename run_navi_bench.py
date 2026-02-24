@@ -96,6 +96,7 @@ LOG_FILE_NAME = f"{LOG_FOLDER}/navi_bench_{time.strftime('%Y%m%d%H%M%S', time.lo
 
 logger = logging.getLogger("navi_bench_runner")
 logger.setLevel(logging.INFO)
+logger.propagate = False  # Prevent duplicate output via root logger
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 file_handler = logging.FileHandler(LOG_FILE_NAME, encoding="utf-8")
@@ -109,22 +110,44 @@ logger.addHandler(file_handler)
 # ──────────────────────────────────────────────────────────────────────
 # Async helper – run async evaluator methods from sync code
 # ──────────────────────────────────────────────────────────────────────
-# navi-bench evaluators are async, but ScriptBrowserEnv is sync.
-# We keep a *single* event loop and use it for all evaluator calls.
-_LOOP: Optional[asyncio.AbstractEventLoop] = None
-
-
-def _get_loop() -> asyncio.AbstractEventLoop:
-    global _LOOP
-    if _LOOP is None or _LOOP.is_closed():
-        _LOOP = asyncio.new_event_loop()
-    return _LOOP
+# navi-bench evaluators are async, but ScriptBrowserEnv uses sync
+# Playwright which runs its own internal asyncio event loop.
+#
+# We CANNOT call loop.run_until_complete() in the main thread because
+# Playwright's loop is already running there.  Instead, we spin up
+# a dedicated background thread with its own fresh event loop.
+# ──────────────────────────────────────────────────────────────────────
+import threading
+from concurrent.futures import Future
 
 
 def run_async(coro):
-    """Run an async coroutine from synchronous context."""
-    loop = _get_loop()
-    return loop.run_until_complete(coro)
+    """Run an async coroutine from synchronous context.
+
+    Executes the coroutine in a separate thread with its own event loop
+    to avoid conflicts with Playwright's internal asyncio loop.
+    """
+    future: Future = Future()
+
+    def _target():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(coro)
+            future.set_result(result)
+        except Exception as e:
+            future.set_exception(e)
+        finally:
+            loop.close()
+
+    thread = threading.Thread(target=_target, daemon=True)
+    thread.start()
+    thread.join(timeout=120)  # generous timeout for network-heavy evaluators
+
+    if thread.is_alive():
+        raise TimeoutError("run_async: evaluator call timed out after 120 seconds")
+
+    return future.result()
 
 
 # ══════════════════════════════════════════════════════════════════════

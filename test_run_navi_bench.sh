@@ -477,12 +477,13 @@ if [ -f "$SUMMARY_FILE" ]; then
 import json
 with open('$SUMMARY_FILE', 'r') as f:
     data = json.load(f)
-print(f'OK|tasks={len(data.get(\"task_results\", []))}|score={data.get(\"overall\", {}).get(\"average_score\", \"N/A\")}')
+n = len(data.get('task_results', []))
+s = data.get('overall', {}).get('average_score', 'N/A')
+print(f'OK tasks={n} score={s}')
 " 2>&1)
 
     if [[ "$JSON_CHECK" == OK* ]]; then
-        IFS='|' read -r _ tasks_info score_info <<< "$JSON_CHECK"
-        assert_pass "Summary JSON valid ($tasks_info, $score_info)"
+        assert_pass "Summary JSON valid - $JSON_CHECK"
     else
         assert_fail "Summary JSON malformed" "$JSON_CHECK"
     fi
@@ -495,8 +496,8 @@ DIR_COUNT=$(find "$TEST_RESULT_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null 
 if [ "$DIR_COUNT" -gt 0 ]; then
     assert_pass "Task result directories found: $DIR_COUNT"
     # List them
-    find "$TEST_RESULT_DIR" -mindepth 1 -maxdepth 1 -type d -printf "  %f\n" 2>/dev/null | head -10 | while read -r dir; do
-        print_detail "→ $dir"
+    find "$TEST_RESULT_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -10 | while read -r dirpath; do
+        print_detail "-> $(basename "$dirpath")"
     done
 else
     assert_fail "No task result directories found in $TEST_RESULT_DIR"
