@@ -89,28 +89,38 @@ else
 fi
 
 # ==========================================================================
-# Fix 2: Install navi-bench package
+# Fix 2: Ensure navi-bench source is available and installed
 # ==========================================================================
-log_info "Checking navi-bench installation..."
+log_info "Checking navi-bench..."
 
 PYTHON_CMD=""
 if command -v python3 &>/dev/null; then PYTHON_CMD="python3"
 elif command -v python &>/dev/null; then PYTHON_CMD="python"
 else log_error "Python not found!"; return 1 2>/dev/null || exit 1; fi
 
-# Check if navi_bench is importable
+# 2a. Ensure navi-bench directory has actual source code
+#     It may exist as an empty git submodule placeholder.
+if [ -d "navi-bench" ] && [ ! -f "navi-bench/pyproject.toml" ]; then
+    log_warn "navi-bench/ directory exists but is incomplete (no pyproject.toml)"
+    log_warn "This is likely an uninitialized git submodule. Re-cloning..."
+    rm -rf navi-bench
+fi
+
+if [ ! -d "navi-bench" ]; then
+    log_info "Cloning navi-bench from GitHub..."
+    git clone https://github.com/yutori-ai/navi-bench.git navi-bench
+    log_success "navi-bench cloned"
+else
+    log_success "navi-bench source directory exists"
+fi
+
+# 2b. pip install -e if not already importable
 NB_CHECK=$($PYTHON_CMD -c "import navi_bench; print('OK')" 2>&1 || true)
 
 if [[ "$NB_CHECK" != *"OK"* ]]; then
-    if [ -d "navi-bench" ]; then
-        log_warn "navi-bench not installed. Running pip install -e ./navi-bench ..."
-        $PYTHON_CMD -m pip install -e ./navi-bench
-        log_success "navi-bench installed"
-    else
-        log_error "navi-bench directory not found! Clone it first:"
-        log_error "  git clone https://github.com/yutori-ai/navi-bench.git"
-        return 1 2>/dev/null || exit 1
-    fi
+    log_warn "navi-bench not installed as Python package. Running pip install..."
+    $PYTHON_CMD -m pip install -e ./navi-bench
+    log_success "navi-bench installed"
 else
     log_success "navi-bench already installed"
 fi
