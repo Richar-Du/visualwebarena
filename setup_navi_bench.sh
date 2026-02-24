@@ -126,6 +126,41 @@ else
 fi
 
 # ==========================================================================
+# Fix 2b: Ensure Playwright browser binaries are installed
+# ==========================================================================
+log_info "Checking Playwright browser binaries..."
+
+PW_CHECK=$($PYTHON_CMD -c "
+from playwright.sync_api import sync_playwright
+p = sync_playwright().start()
+try:
+    b = p.chromium.launch(headless=True)
+    b.close()
+    print('OK')
+except Exception as e:
+    print(f'MISSING:{e}')
+finally:
+    p.stop()
+" 2>&1 || true)
+
+if [[ "$PW_CHECK" == *"OK"* ]]; then
+    log_success "Playwright browser binaries installed"
+else
+    log_warn "Playwright browsers not found. Installing..."
+    $PYTHON_CMD -m playwright install chromium
+    log_success "Playwright chromium installed"
+fi
+
+# ==========================================================================
+# Fix 2c: tiktoken cache directory
+# ==========================================================================
+# tiktoken defaults to /tmp/data-gym-cache/ which may not be writable
+export TIKTOKEN_CACHE_DIR="${TIKTOKEN_CACHE_DIR:-$HOME/.cache/tiktoken}"
+export DATA_GYM_CACHE_DIR="${DATA_GYM_CACHE_DIR:-$HOME/.cache/tiktoken}"
+mkdir -p "$TIKTOKEN_CACHE_DIR"
+log_success "tiktoken cache dir: $TIKTOKEN_CACHE_DIR"
+
+# ==========================================================================
 # Fix 3: Set VisualWebArena environment variables
 # ==========================================================================
 # browser_env/env_config.py asserts these env vars exist at import time.

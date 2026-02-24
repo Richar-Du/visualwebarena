@@ -760,6 +760,19 @@ def main():
             logger.error(f"[Error] Task {task_id} failed: {e}")
             logger.error(traceback.format_exc())
 
+            # ── Clean up Playwright context to prevent cascading errors ──
+            # If env.reset() → setup() fails after sync_playwright().__enter__()
+            # but before reset_finished is set to True, the Playwright internal
+            # asyncio loop is left dangling.  The next env.reset() will then fail
+            # with "Playwright Sync API inside asyncio loop".  Force-close it here.
+            try:
+                if hasattr(env, 'context_manager') and env.context_manager is not None:
+                    env.context_manager.__exit__(None, None, None)
+                    env.reset_finished = False
+                    logger.info("[Cleanup] Closed orphaned Playwright context")
+            except Exception as cleanup_err:
+                logger.debug(f"[Cleanup] Playwright context cleanup: {cleanup_err}")
+
             # Record failure
             error_result = {
                 "task_id": task_id,
