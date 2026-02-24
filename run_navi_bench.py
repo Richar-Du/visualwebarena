@@ -38,6 +38,27 @@ if NAVI_BENCH_DIR not in sys.path:
     sys.path.insert(0, NAVI_BENCH_DIR)
 
 # ──────────────────────────────────────────────────────────────────────
+# Set VisualWebArena environment variables BEFORE importing browser_env.
+#
+# browser_env/env_config.py asserts that site URLs (REDDIT, SHOPPING, etc.)
+# are set at IMPORT TIME.  Navi-Bench evaluates on real public websites
+# (Craigslist, Apartments.com, Google Flights, OpenTable, Resy) and does
+# NOT use the VisualWebArena self-hosted sites.  Setting placeholder URLs
+# here satisfies the assertion without affecting Navi-Bench evaluation.
+# ──────────────────────────────────────────────────────────────────────
+_VWA_PLACEHOLDERS = {
+    "DATASET": "visualwebarena",
+    "REDDIT": "http://placeholder.reddit.example",
+    "SHOPPING": "http://placeholder.shopping.example",
+    "WIKIPEDIA": "http://placeholder.wiki.example",
+    "HOMEPAGE": "http://placeholder.homepage.example",
+    "CLASSIFIEDS": "http://placeholder.classifieds.example",
+    "CLASSIFIEDS_RESET_TOKEN": "placeholder_token",
+}
+for _key, _val in _VWA_PLACEHOLDERS.items():
+    os.environ.setdefault(_key, _val)
+
+# ──────────────────────────────────────────────────────────────────────
 # Imports from the existing agent framework
 # ──────────────────────────────────────────────────────────────────────
 from browser_env import (

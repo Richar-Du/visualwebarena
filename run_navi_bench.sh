@@ -111,6 +111,19 @@ done
 echo -e "${BOLD}Phase 1: Environment & Dependency Checks${NC}"
 echo "----------------------------------------"
 
+# --- 1.0 VisualWebArena environment variables ---
+# browser_env/env_config.py asserts these exist at import time.
+# Navi-Bench evaluates on real public websites, NOT the VWA self-hosted sites,
+# so placeholder values are sufficient.
+export DATASET="${DATASET:-visualwebarena}"
+export REDDIT="${REDDIT:-http://placeholder.reddit.example}"
+export SHOPPING="${SHOPPING:-http://placeholder.shopping.example}"
+export WIKIPEDIA="${WIKIPEDIA:-http://placeholder.wiki.example}"
+export HOMEPAGE="${HOMEPAGE:-http://placeholder.homepage.example}"
+export CLASSIFIEDS="${CLASSIFIEDS:-http://placeholder.classifieds.example}"
+export CLASSIFIEDS_RESET_TOKEN="${CLASSIFIEDS_RESET_TOKEN:-placeholder_token}"
+check_pass "VisualWebArena env vars set (DATASET=$DATASET)"
+
 # --- 1.1 Python ---
 log_info "Checking Python interpreter..."
 PYTHON_CMD=""

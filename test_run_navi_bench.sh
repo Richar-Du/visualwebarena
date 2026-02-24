@@ -75,6 +75,17 @@ echo -e "${BOLD}║   Navi-Bench Pipeline Reliability Test       ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════════════╝${NC}"
 echo ""
 
+# ===========================
+# Pre-setup: VisualWebArena env vars (needed for browser_env import)
+# ===========================
+export DATASET="${DATASET:-visualwebarena}"
+export REDDIT="${REDDIT:-http://placeholder.reddit.example}"
+export SHOPPING="${SHOPPING:-http://placeholder.shopping.example}"
+export WIKIPEDIA="${WIKIPEDIA:-http://placeholder.wiki.example}"
+export HOMEPAGE="${HOMEPAGE:-http://placeholder.homepage.example}"
+export CLASSIFIEDS="${CLASSIFIEDS:-http://placeholder.classifieds.example}"
+export CLASSIFIEDS_RESET_TOKEN="${CLASSIFIEDS_RESET_TOKEN:-placeholder_token}"
+
 # ==============================================================================
 # Section 1: Static File Checks
 # ==============================================================================
@@ -110,10 +121,21 @@ else
     assert_fail "navi-bench/ directory not found"
 fi
 
-if [ -f "navi-bench/navi_bench/__init__.py" ]; then
-    assert_pass "navi-bench package has __init__.py"
+if [ -f "navi-bench/navi_bench/base.py" ]; then
+    assert_pass "navi-bench core module exists (base.py)"
 else
-    assert_fail "navi-bench package missing __init__.py"
+    assert_fail "navi-bench core module missing (base.py)" "Run: git clone https://github.com/yutori-ai/navi-bench.git"
+fi
+
+# Check if navi-bench is pip-installed (required for proper imports)
+_PY=$(command -v python3 || command -v python || echo "")
+if [ -n "$_PY" ]; then
+    NB_INSTALLED=$($_PY -c "import navi_bench" 2>&1 && echo "OK" || echo "NOT_INSTALLED")
+    if [[ "$NB_INSTALLED" == *"OK"* ]]; then
+        assert_pass "navi-bench pip-installed"
+    else
+        assert_warn "navi-bench NOT pip-installed" "Run: pip install -e ./navi-bench"
+    fi
 fi
 
 echo ""
