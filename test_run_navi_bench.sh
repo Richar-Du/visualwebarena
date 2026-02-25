@@ -20,6 +20,16 @@ CONFIG_FILE="config_navi_bench.json"
 TEST_RESULT_DIR="results/test_reliability_$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="${TEST_RESULT_DIR}/test_output.log"
 
+# ── Accessible domains only ──────────────────────────────────────────
+# Excluded domains (not reachable from test environment):
+#   - apartments   : HTTP 403 (blocked by Cloudflare)
+#   - opentable    : TIMEOUT  (geo-restricted / rate-limited)
+# Accessible domains:
+#   - craigslist   : OK
+#   - google_flights : OK
+#   - resy         : OK
+TEST_DOMAINS="craigslist,google_flights,resy"
+
 # Colors
 PASS='\033[0;32m'
 FAIL='\033[0;31m'
@@ -390,11 +400,12 @@ echo ""
 echo -e "${BOLD}── Section 5: Dry Run Test (5 tasks) ──${NC}"
 echo ""
 
-print_info "Running: $TARGET_SCRIPT --max_tasks 5 --dry_run --monitor true"
+print_info "Domains:  $TEST_DOMAINS"
+print_info "Running: $TARGET_SCRIPT --domains $TEST_DOMAINS --max_tasks 5 --dry_run --monitor true"
 echo ""
 
 # Capture BOTH stdout and stderr
-DRY_OUTPUT=$($TARGET_SCRIPT --max_tasks 5 --dry_run --monitor true 2>&1)
+DRY_OUTPUT=$($TARGET_SCRIPT --domains "$TEST_DOMAINS" --max_tasks 5 --dry_run --monitor true 2>&1)
 DRY_EXIT=$?
 
 if [ $DRY_EXIT -eq 0 ]; then
@@ -422,7 +433,7 @@ echo ""
 # Create result directory
 mkdir -p "$TEST_RESULT_DIR"
 
-print_info "Domain:     craigslist (selected for stability)"
+print_info "Domains:    $TEST_DOMAINS"
 print_info "Max tasks:  5"
 print_info "Monitor:    enabled"
 print_info "Output dir: $TEST_RESULT_DIR"
@@ -435,7 +446,7 @@ echo "════════════════════════�
 
 set +e
 $TARGET_SCRIPT \
-    --domains "craigslist" \
+    --domains "$TEST_DOMAINS" \
     --max_tasks 5 \
     --result_dir "$TEST_RESULT_DIR" \
     --no_trace \
