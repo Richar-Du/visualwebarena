@@ -35,6 +35,7 @@ def retry_with_exponential_backoff(  # type: ignore
         # Initialize variables
         num_retries = 0
         delay = initial_delay
+        last_exception = None
 
         # Loop until a successful response or max_retries is hit or an exception is raised
         while True:
@@ -44,14 +45,28 @@ def retry_with_exponential_backoff(  # type: ignore
 
             # Retry on specified errors
             except errors as e:
-                # Increment retries
+                last_exception = e
                 num_retries += 1
+
+                # Log the actual error for debugging
+                err_type = type(e).__name__
+                logging.warning(
+                    f"[LLM API] {err_type} (attempt {num_retries}/{max_retries}): {e}"
+                )
+
+                # BadRequestError is usually unrecoverable (wrong model, invalid format)
+                # Don't waste time retrying
+                if isinstance(e, openai.BadRequestError):
+                    raise Exception(
+                        f"LLM API BadRequestError (not retryable): {e}"
+                    ) from e
 
                 # Check if max retries has been reached
                 if num_retries > max_retries:
                     raise Exception(
-                        f"Maximum number of retries ({max_retries}) exceeded."
-                    )
+                        f"Maximum number of retries ({max_retries}) exceeded. "
+                        f"Last error: {err_type}: {last_exception}"
+                    ) from last_exception
 
                 # Increment the delay
                 delay *= exponential_base * (1 + jitter * random.random())
